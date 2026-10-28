@@ -79,6 +79,9 @@ namespace BallSortGame.Gameplay
         readonly List<Tube> _tubes = new List<Tube>();
         readonly Stack<RecordStep> _record = new Stack<RecordStep>();
         readonly BallSortSolver _solver = new BallSortSolver();
+        readonly Dictionary<int, int> _attemptByLevel = new Dictionary<int, int>();
+        readonly Dictionary<int, int> _lastSeedByLevel = new Dictionary<int, int>();
+        readonly System.Random _seedRng = new System.Random();
 
         StageData _stage;
         Tube _curTube;
@@ -136,7 +139,14 @@ namespace BallSortGame.Gameplay
             if (_stage == null) return;
             int idx = ((level - 1) % _stage.Levels.Count + _stage.Levels.Count) % _stage.Levels.Count;
             CurrentLevel = level;
-            CurrentLevelData = _stage.Levels[idx];
+            // Generated packs carry several fills ("seeds") per level: attempt k plays seed k, then a random
+            // one that is not the last played; easier dlb seeds take over after the cap of failed attempts.
+            var slot = _stage.Levels[idx];
+            _attemptByLevel.TryGetValue(level, out int attempt);
+            _lastSeedByLevel.TryGetValue(level, out int lastSeed);
+            CurrentLevelData = slot.ForAttempt(attempt, attempt == 0 ? -1 : lastSeed, _seedRng, out int seedIndex);
+            _attemptByLevel[level] = attempt + 1;
+            _lastSeedByLevel[level] = seedIndex;
             StartGameInternal(CurrentLevelData);
             LevelStarted?.Invoke(CurrentLevel, CurrentLevelData);
             MovesChanged?.Invoke(_sumStep, UndosLeft);
@@ -375,6 +385,7 @@ namespace BallSortGame.Gameplay
         void EndGame()
         {
             _gameOver = true;
+            _attemptByLevel.Remove(CurrentLevel);   // a win resets the retry count, so the next visit starts at seed 0 again
             ClearSelection();
             StartCoroutine(DelayGameOver());
         }

@@ -24,6 +24,35 @@ namespace BallSortGame.Core
         [JsonProperty("tubes")] public List<List<int>> Tubes = new List<List<int>>();
         [JsonProperty("steps")] public List<List<int>> Steps = new List<List<int>>();
 
+        // ---- optional fields written by the level generator (absent in the reference packs) ----
+        /// <summary>Difficulty bucket 1..7 (Magic Sort bot scale) of this fill.</summary>
+        [JsonProperty("difficulty", NullValueHandling = NullValueHandling.Ignore)] public int? Difficulty;
+        /// <summary>Alternative fills of the same design, played on retries (seed k on attempt k, then random, never the last one).</summary>
+        [JsonProperty("variants", NullValueHandling = NullValueHandling.Ignore)] public List<LevelData> Variants;
+        /// <summary>Easier fills used after <see cref="DlbCap"/> failed attempts (dynamic level balancing).</summary>
+        [JsonProperty("dlb_variants", NullValueHandling = NullValueHandling.Ignore)] public List<LevelData> DlbVariants;
+        [JsonProperty("dlb_cap", NullValueHandling = NullValueHandling.Ignore)] public int? DlbCap;
+        [JsonProperty("hard", NullValueHandling = NullValueHandling.Ignore)] public bool? IsHard;
+        [JsonProperty("super_hard", NullValueHandling = NullValueHandling.Ignore)] public bool? IsSuperHard;
+
+        /// <summary>All fills of this level slot: this one first, then <see cref="Variants"/>.</summary>
+        [JsonIgnore] public int SeedCount => 1 + (Variants?.Count ?? 0);
+
+        public LevelData SeedAt(int index) => index <= 0 || Variants == null ? this : Variants[Math.Min(index - 1, Variants.Count - 1)];
+
+        /// <summary>
+        /// Fill to play on the given attempt (0 = first try), following the Magic Sort rule: seed k on attempt k,
+        /// then a random one that is not <paramref name="lastPlayedIndex"/>; after <see cref="DlbCap"/> attempts the
+        /// dlb fills take over. Returns the chosen fill and its index (dlb indices are offset by 1000).
+        /// </summary>
+        public LevelData ForAttempt(int attempt, int lastPlayedIndex, System.Random rng, out int index)
+        {
+            var (useDlb, i) = SeedSelector.Pick(SeedCount, DlbVariants?.Count ?? 0, DlbCap ?? 0, attempt, lastPlayedIndex >= 1000 ? lastPlayedIndex - 1000 : lastPlayedIndex, rng);
+            if (useDlb) { index = 1000 + i; return DlbVariants[i]; }
+            index = i;
+            return SeedAt(i);
+        }
+
         [JsonIgnore] public int Capacity
         {
             get { int c = 0; foreach (var t in Tubes) c = Mathf.Max(c, t.Count); return c; }
