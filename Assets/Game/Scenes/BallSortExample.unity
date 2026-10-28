@@ -715,7 +715,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BallSortGame.Gameplay.GameMgr
   tubePrefab: {fileID: 1774872263216244586, guid: 52b1c35b662a1094faedc58bfa828166, type: 3}
   ballPrefab: {fileID: 691615049012603196, guid: 73bd2888e32643348877587c6a6ce974, type: 3}
-  tubeSprite: {fileID: 21300000, guid: 229c6745051106f41acf63cc96c5407f, type: 3}
+  tubeSprite: {fileID: 21300000, guid: 798ac6c4203026244b1921c5e654cb12, type: 3}
   ballSprites:
   - {fileID: 21300000, guid: d7cc755c2e4ce35489c4fd11bb859177, type: 3}
   - {fileID: 21300000, guid: 6fe2cac275ef66149803472da7eb4a41, type: 3}
@@ -730,7 +730,7 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 8186ac5b098db2b4aab88f541ead94d4, type: 3}
   - {fileID: 21300000, guid: 271a62bc3ddfa9d40a344f06d2ee7f76, type: 3}
   - {fileID: 21300000, guid: a86e98b63eb66da4a87614e833ff2e23, type: 3}
-  TubeWidth: 1.28
+  TubeWidth: 1.81
   TubeHeight: 4.8
   TubeSpace: 0.42
   FirstBallY: -1.79

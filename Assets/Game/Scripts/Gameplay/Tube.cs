@@ -13,7 +13,7 @@ namespace BallSortGame.Gameplay
     public class Tube : MonoBehaviour
     {
         [Header("Skin (set by GameMgr)")]
-        public float TubeWidth = 1.28f;
+        public float TubeWidth = 1.81f;
         public float TubeHeight = 4.8f;
         public float FirstBallY = -1.79f;   // local y of the bottom ball center
         public float BallPitch = 1.08f;     // distance between stacked ball centers

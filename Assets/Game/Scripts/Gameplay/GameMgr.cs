@@ -27,7 +27,7 @@ namespace BallSortGame.Gameplay
         public Sprite tubeSprite;
         [Tooltip("Color index 1 uses element 0, index 2 element 1, ...")]
         public Sprite[] ballSprites;
-        public float TubeWidth = 1.28f;
+        public float TubeWidth = 1.81f;
         public float TubeHeight = 4.8f;
         public float TubeSpace = 0.42f;
         public float FirstBallY = -1.79f;

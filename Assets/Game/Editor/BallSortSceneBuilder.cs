@@ -63,6 +63,8 @@ namespace BallSortGame.EditorTools
                 imp.maxTextureSize = 2048;
                 string name = Path.GetFileNameWithoutExtension(path);
                 if (borders.TryGetValue(name, out var b)) imp.spriteBorder = b;
+                // Tube.png is 512x1024 hi-res art: 200 PPU keeps the glass at the 4.8-unit tube height the ball slots expect
+                if (name == "Tube") imp.spritePixelsPerUnit = 200;
                 imp.SaveAndReimport();
             }
             AssetDatabase.Refresh();
@@ -75,10 +77,10 @@ namespace BallSortGame.EditorTools
         {
             var go = new GameObject("Tube", typeof(SpriteRenderer), typeof(BoxCollider2D), typeof(Tube));
             var sr = go.GetComponent<SpriteRenderer>();
-            sr.sprite = LoadSprite(Root + "/Art/Tubes/default_tube_v3.png");
+            sr.sprite = LoadSprite(Root + "/Art/Tubes/Tube.png");
             sr.sortingOrder = 3;
             var col = go.GetComponent<BoxCollider2D>();
-            col.size = new Vector2(1.58f, 6.4f);
+            col.size = new Vector2(2.11f, 6.4f);
             col.offset = new Vector2(0f, 0.8f);
             string path = Root + "/Prefabs/Tube.prefab";
             var prefab = PrefabUtility.SaveAsPrefabAsset(go, path);
@@ -132,7 +134,7 @@ namespace BallSortGame.EditorTools
             gm.cam = cam;
             gm.tubePrefab = tubePrefab;
             gm.ballPrefab = ballPrefab;
-            gm.tubeSprite = LoadSprite(Root + "/Art/Tubes/default_tube_v3.png");
+            gm.tubeSprite = LoadSprite(Root + "/Art/Tubes/Tube.png");
             var balls = new List<Sprite>();
             for (int i = 0; i < 13; i++)
             {
