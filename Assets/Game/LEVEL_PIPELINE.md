@@ -39,3 +39,32 @@ colours, `TubeSpec.Partial(4, 3,0,0,0)` for a fixed bottom ball) and call `Level
 
 Calibration harness (console, rates Magic Sort seeds / runs the generator outside Unity):
 `C:\Users\Yavuz\AppData\Local\Temp\claude\...\scratchpad\calib\` (build output `D:\Tools\decon\tmp\calib-build\`).
+
+## In-app level editor
+
+Ball-sort counterpart of Magic Sort's `Modules.LevelEditor.WaterSort` editor scene: it lives in the shipped
+game, players never see it, and designers switch into it from the running build.
+
+| File | Role |
+| --- | --- |
+| `Scripts/LevelEditor/EditorLevel.cs` | The edited layout: tubes as bottom-first cells (colour 1..N, `-1` = `?` luck slot). Presets follow from the cells (all colours = Deterministic, all `?` = Luck, mixed = PartialLuck, none = Empty). `ToDesign()` feeds `LevelFiller` / `LevelGenerator`; `Validate()` is the `IsLevelValid` check (every colour exactly `capacity` balls, free space, not already solved). |
+| `Scripts/LevelEditor/LevelEditorManager.cs` | `EditorManager` + `EditorInputSystem`: builds its own UI at runtime, attaches itself to any scene with a `GameMgr`, undo/redo, Test, Generate, Save/Open, Copy/Paste, To pack. |
+| `Scripts/LevelEditor/EditorUI.cs` | Runtime uGUI kit with procedural sprites (no prefabs or Resources needed). |
+| `Scripts/Gameplay/GameMgr.cs` | `SetOverrideLevel(level)` plays an editor level (with its seeds) in place of the pack slot; `null` goes back. |
+
+**Access.** Available in the Unity Editor and development builds, or in a release build after
+`PlayerPrefs.SetInt("ballsort.level_editor", 1)`. Open it with **F2** or **five quick taps on the level pill**.
+Esc / F2 closes it (or returns from a test).
+
+**Tools.** Palette: colours (with `used/height` counters), `?` (luck slot, counter = placed/needed) and Erase.
+*Paint* taps a slot (taps above the stack append; Erase removes a ball), *Fill tube* fills a whole tube
+(`?` = luck tube, Erase = empty tube), *Move* swaps two tubes, *Delete* removes a tube, *+ Tube* adds one.
+*Height* and *Colours* steppers set capacity and colour count; *Pack lv + Load* imports a level of the current pack.
+
+**Actions.** *Test* plays the generated seeds (retry = next seed) or one random fill, with a `< Editor` button to
+return. *Check* rates one fill (solvable, moves, bot bucket). *Generate* runs `LevelGenerator` off the main thread
+for a wanted difficulty and seed count (local stand-in for Magic Sort's `SolveLevelRequest` backend); each seed can
+be played from the list. *To pack* writes the seeds into `Resources/data/editor_pack.json` (in the Unity Editor;
+on a device into `persistentDataPath/LevelEditor/`), replacing the entry with the same name; point
+`GameMgr.levelPackResource` at `data/editor_pack` to play them. *Save/Open* keep layouts as JSON in
+`persistentDataPath/LevelEditor/`; *Copy/Paste* use the clipboard and also accept pack levels and whole packs.

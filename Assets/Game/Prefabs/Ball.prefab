@@ -103,3 +103,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f0be8f0e20f354f40a9666328cd79eed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BallSortGame.Gameplay.Ball
+  ArcHeight: 0.55
+  MinEllipseHeadroom: 0.6
+  EllipseHeightBase: 0.6
+  EllipseHeightPerUnit: 0.22
+  BounceHeight: 0.2
+  BounceDuration: 0.16

@@ -71,6 +71,10 @@ namespace BallSortGame.Gameplay
 
         public int CurrentLevel { get; private set; }
         public LevelData CurrentLevelData { get; private set; }
+        /// <summary>Loaded level pack (null when it failed to load).</summary>
+        public StageData Stage => _stage;
+        /// <summary>Level played instead of the pack slot (set by the in-app level editor's Test); null = play the pack.</summary>
+        public LevelData OverrideLevel { get; private set; }
         public IReadOnlyList<Tube> Tubes => _tubes;
         public bool IsPaused { get => _isPause; set { _isPause = value; if (value) ClearSelection(); } }
         public int UndosLeft => Mathf.Max(0, UndoLimit - _undosUsed);
@@ -136,12 +140,16 @@ namespace BallSortGame.Gameplay
 
         public void StartLevel(int level)
         {
-            if (_stage == null) return;
-            int idx = ((level - 1) % _stage.Levels.Count + _stage.Levels.Count) % _stage.Levels.Count;
+            if (OverrideLevel == null && (_stage == null || _stage.Levels.Count == 0)) return;
             CurrentLevel = level;
             // Generated packs carry several fills ("seeds") per level: attempt k plays seed k, then a random
             // one that is not the last played; easier dlb seeds take over after the cap of failed attempts.
-            var slot = _stage.Levels[idx];
+            var slot = OverrideLevel;
+            if (slot == null)
+            {
+                int idx = ((level - 1) % _stage.Levels.Count + _stage.Levels.Count) % _stage.Levels.Count;
+                slot = _stage.Levels[idx];
+            }
             _attemptByLevel.TryGetValue(level, out int attempt);
             _lastSeedByLevel.TryGetValue(level, out int lastSeed);
             CurrentLevelData = slot.ForAttempt(attempt, attempt == 0 ? -1 : lastSeed, _seedRng, out int seedIndex);
@@ -151,6 +159,19 @@ namespace BallSortGame.Gameplay
             LevelStarted?.Invoke(CurrentLevel, CurrentLevelData);
             MovesChanged?.Invoke(_sumStep, UndosLeft);
             AddTubeChanged?.Invoke(AddTubesLeft);
+        }
+
+        /// <summary>
+        /// Plays <paramref name="level"/> (with its variants) in place of the current pack slot, starting at seed 0;
+        /// null goes back to the pack. Used by the in-app level editor.
+        /// </summary>
+        public void SetOverrideLevel(LevelData level)
+        {
+            OverrideLevel = level;
+            int lv = Mathf.Max(1, CurrentLevel);
+            _attemptByLevel.Remove(lv);
+            _lastSeedByLevel.Remove(lv);
+            StartLevel(lv);
         }
 
         public void Restart() => StartLevel(CurrentLevel);
