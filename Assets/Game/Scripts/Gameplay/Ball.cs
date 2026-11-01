@@ -93,6 +93,21 @@ namespace BallSortGame.Gameplay
             IsHidden = true;
             if (placeholder != null) _sr.sprite = placeholder;
             _sr.color = HiddenTint;
+            EnsureMark();
+        }
+
+        /// <summary>
+        /// Editor preview of a hidden coloured ball: the colour stays visible and a "?" is drawn on it, so the designer
+        /// sees both what the ball is and that the game will hide it. The ball does not count as hidden.
+        /// </summary>
+        public void ShowHiddenMark()
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            EnsureMark();
+        }
+
+        void EnsureMark()
+        {
             if (_mark == null)
             {
                 _mark = new GameObject("mark", typeof(MeshRenderer), typeof(TextMesh));

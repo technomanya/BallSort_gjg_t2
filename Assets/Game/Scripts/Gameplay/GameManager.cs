@@ -255,12 +255,13 @@ namespace BallSortGame.Gameplay
         /// below 1 is an unknown ("?") slot the generator fills later. The board stays paused until
         /// <see cref="StartLevel"/> or <see cref="SetOverrideLevel"/> brings the game back.
         /// </summary>
-        public void Preview(List<List<int>> tubesBottomFirst, int capacity) => Preview(tubesBottomFirst, capacity, null, null);
+        public void Preview(List<List<int>> tubesBottomFirst, int capacity) => Preview(tubesBottomFirst, capacity, null, null, null);
 
         /// <inheritdoc cref="Preview(List{List{int}}, int)"/>
         /// <param name="kinds">Per-tube <see cref="TubeKind"/> as ints (null = all normal).</param>
         /// <param name="heavy">Per-tube 0/1: the bottom ball is heavy (null = none).</param>
-        public void Preview(List<List<int>> tubesBottomFirst, int capacity, IList<int> kinds, IList<int> heavy)
+        /// <param name="hiddenBalls">Per-tube bottom-first 0/1: a coloured ball the game hides; drawn in colour with a "?" (null = none).</param>
+        public void Preview(List<List<int>> tubesBottomFirst, int capacity, IList<int> kinds, IList<int> heavy, IList<List<int>> hiddenBalls)
         {
             if (_noMoveCheck != null) { StopCoroutine(_noMoveCheck); _noMoveCheck = null; }
             StopAllCoroutines();
@@ -276,6 +277,9 @@ namespace BallSortGame.Gameplay
                 var tube = CreateTube(i, kind);
                 tube.SetBalls(tubesBottomFirst[i], v => v > 0 ? CreateBall(v) : CreateUnknownBall());
                 if (heavy != null && i < heavy.Count && heavy[i] != 0 && tube.Count > 0) tube.Balls[0].SetHeavy(true, heavyBallSprite);
+                if (hiddenBalls != null && i < hiddenBalls.Count && hiddenBalls[i] != null)
+                    for (int k = 0; k < hiddenBalls[i].Count && k < tube.Count; k++)
+                        if (hiddenBalls[i][k] != 0 && tubesBottomFirst[i][k] > 0) tube.Balls[k].ShowHiddenMark();
                 if (tube.IsHiddenTube) tube.SetCoverAlpha(0.55f);   // see-through: the designer paints the balls under it
             }
             ComputeTubePos(animate: false);

@@ -24,12 +24,14 @@ namespace BallSortGame.LevelEditor
     /// grey "?" balls for luck slots) with the editor controls over it in the game's UI skin, the way the main menu
     /// sits over the board. Tap a ball to recolour it with the palette colour, tap the empty glass to fill the rest of
     /// the tube; TUBES / HEIGHT / COLOURS steppers size the level (a new tube comes as a full "?" tube of a new colour;
-    /// erase it for a spare tube). The IN and OUT palette tools make a tube one-way
+    /// erase it for a spare tube). Check fills the "?" cells with the colours of one solvable fill, so the designer sees
+    /// the whole level; the "?" tool then hides a coloured ball in the game (tap again to show it): it keeps its colour,
+    /// drawn with a "?" on it. The IN and OUT palette tools make a tube one-way
     /// (tap again to make it normal): in-only tubes start empty, out-only tubes start filled. The HIDE tool covers a tube
     /// until a neighbouring tube is completed (tap again to uncover it). The HEAVY tool puts the
     /// cannonball weight on a tube's bottom ball (tap again to take it off): it keeps its colour but only ever moves
     /// into an empty tube. Test plays it, Check
-    /// rates one fill, Save generates rated seeds of the wanted difficulty and writes them into the pack the game plays,
+    /// fills the "?" cells and rates the result, Save generates rated seeds of the wanted difficulty and writes them into the pack the game plays,
     /// replacing the slot the layout came from (or appending a new level). The LEVEL row's number box + GO jumps to a
     /// pack slot by its unique level number (the number it shows before the pack loops); a number past the end starts
     /// a new level that is appended on save.
@@ -448,7 +450,12 @@ namespace BallSortGame.LevelEditor
                 Status("In-only tubes start empty. Tap it with the IN tool to make it a normal tube again.", EditorUI.Bad);
                 return;
             }
-            if (slot < count)
+            if (slot < count && _selected == EditorLevel.Random && _level.Tubes[index][slot] > 0)
+            {
+                // "?" on a coloured ball: the game hides it (tap again to show it); the colour stays
+                Edit(() => _level.SetBallHidden(index, slot, !_level.IsBallHidden(index, slot)));
+            }
+            else if (slot < count)
             {
                 // a ball: recolour it, or take it out with the eraser (the balls above drop down)
                 Edit(() => _level.Paint(index, slot, _selected));
@@ -476,21 +483,27 @@ namespace BallSortGame.LevelEditor
         // Check / Save (generator = the local stand-in for Magic Sort's SolveLevelRequest backend)
         // =====================================================================
 
-        /// <summary>Rates one fill: solvable, optimal-ish move count, and the bot difficulty bucket.</summary>
+        /// <summary>
+        /// Fills the "?" cells with the colours of one random fill, so the designer sees the whole level (hide chosen
+        /// balls again with the "?" tool), then rates it: solvable, optimal-ish move count, and the bot difficulty bucket.
+        /// </summary>
         void Check()
         {
             if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
-            int seed = _level.HasRandom ? UnityEngine.Random.Range(1, int.MaxValue) : 0;
+            bool filled = _level.HasRandom;
+            int seed = filled ? UnityEngine.Random.Range(1, int.MaxValue) : 0;
             var board = _level.Fill(seed, out error);
             if (board == null) { Status(error, EditorUI.Bad); return; }
-            string what = _level.HasRandom ? "Fill of the hidden balls" : "Layout";
+            if (filled) Edit(() => _level.ApplyFill(board));
+            string what = filled ? "Filled the ? balls" : "Layout";
+            string hint = filled ? " Tap a ball with ? to hide it in the game." : "";
             LevelRating rating = null;
             RunJob("Checking with the solver and the playout bot...", () => rating = new LevelRater().Rate(board, RaterBudget.Default), () =>
             {
                 if (rating.Verdict == SolveVerdict.Solvable)
-                    Status($"{what}: solvable in {rating.OptimalMoves} moves, difficulty {rating.Bucket}/7.", EditorUI.Good);
+                    Status($"{what}: solvable in {rating.OptimalMoves} moves, difficulty {rating.Bucket}/7.{hint}", EditorUI.Good);
                 else
-                    Status(rating.Verdict == SolveVerdict.Unsolvable ? $"{what}: unsolvable." : $"{what}: the solver ran out of budget.", EditorUI.Bad);
+                    Status(rating.Verdict == SolveVerdict.Unsolvable ? $"{what}: unsolvable.{hint}" : $"{what}: the solver ran out of budget.{hint}", EditorUI.Bad);
             });
         }
 
@@ -852,7 +865,7 @@ namespace BallSortGame.LevelEditor
                 minSize = top / Mathf.Max(0.2f, 1f - 2f * FreeScreenFraction - Mathf.Abs(game.BoardOffsetFactor));
             }
             game.MinCameraSize = minSize;
-            game.Preview(_level.Tubes, _level.Capacity, _level.Kinds, _level.HeavyFlags);
+            game.Preview(_level.Tubes, _level.Capacity, _level.Kinds, _level.HeavyFlags, _level.HiddenBalls);
         }
 
         void Status(string text, Color color)
@@ -867,7 +880,7 @@ namespace BallSortGame.LevelEditor
             if (_job != null) return;   // the running job owns the line
             if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
             string s = $"{_level.TubeCount} tubes, {_level.ColorCount} colours x {_level.Capacity}";
-            if (_level.HasRandom) s += $", {_level.RandomSlots} hidden balls";
+            if (_level.HasHiddenBalls) s += $", {_level.HiddenBallCount} hidden balls";
             if (_level.HasHeavy) s += $", {_level.HeavyCount} heavy";
             int inOnly = _level.CountKind(TubeKind.InOnly), outOnly = _level.CountKind(TubeKind.OutOnly);
             if (inOnly > 0) s += $", {inOnly} in-only";

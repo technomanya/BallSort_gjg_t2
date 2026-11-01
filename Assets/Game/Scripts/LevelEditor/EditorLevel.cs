@@ -34,6 +34,11 @@ namespace BallSortGame.LevelEditor
         [JsonProperty("kinds", NullValueHandling = NullValueHandling.Ignore)] public List<int> Kinds;
         /// <summary>Per-tube 0/1, parallel to <see cref="Tubes"/>: 1 = the tube's bottom ball is heavy; null = no heavy ball.</summary>
         [JsonProperty("heavy", NullValueHandling = NullValueHandling.Ignore)] public List<int> HeavyFlags;
+        /// <summary>
+        /// Per-tube, bottom-first 0/1 parallel to <see cref="Tubes"/>: 1 = the ball keeps its colour in the layout but
+        /// the game hides it (grey "?") until it becomes the top ball. Null when no coloured ball is hidden.
+        /// </summary>
+        [JsonProperty("hidden_balls", NullValueHandling = NullValueHandling.Ignore)] public List<List<int>> HiddenBalls;
         /// <summary>Seeds the generator made from this layout (main fill + variants); dropped on every edit.</summary>
         [JsonProperty("seeds", NullValueHandling = NullValueHandling.Ignore)] public LevelData Seeds;
 
@@ -64,11 +69,17 @@ namespace BallSortGame.LevelEditor
             var lv = new EditorLevel { Name = name, Capacity = 1, ColorCount = 1 };
             if (data.TubeKinds != null) lv.Kinds = new List<int>(data.TubeKinds);
             if (data.Heavy != null) lv.HeavyFlags = new List<int>(data.Heavy);
-            foreach (var topFirst in data.Tubes)
+            for (int i = 0; i < data.Tubes.Count; i++)
             {
+                var topFirst = data.Tubes[i];
                 var t = new List<int>();
                 for (int j = topFirst.Count - 1; j >= 0; j--)
-                    if (topFirst[j] > 0) { t.Add(topFirst[j]); lv.ColorCount = Math.Max(lv.ColorCount, topFirst[j]); }
+                    if (topFirst[j] > 0)
+                    {
+                        if (data.IsHidden(i, j)) lv.SetBallHidden(i, t.Count, true, building: true);
+                        t.Add(topFirst[j]);
+                        lv.ColorCount = Math.Max(lv.ColorCount, topFirst[j]);
+                    }
                 lv.Tubes.Add(t);
                 lv.Capacity = Math.Max(lv.Capacity, topFirst.Count);
             }
@@ -148,6 +159,19 @@ namespace BallSortGame.LevelEditor
                 for (int i = 0; i < HeavyFlags.Count; i++) HeavyFlags[i] = HeavyFlags[i] != 0 && Tubes[i].Count > 0 ? 1 : 0;   // a weight needs a ball
                 if (HeavyFlags.TrueForAll(h => h == 0)) HeavyFlags = null;
             }
+            if (HiddenBalls != null)
+            {
+                while (HiddenBalls.Count < Tubes.Count) HiddenBalls.Add(new List<int>());
+                if (HiddenBalls.Count > Tubes.Count) HiddenBalls.RemoveRange(Tubes.Count, HiddenBalls.Count - Tubes.Count);
+                for (int i = 0; i < HiddenBalls.Count; i++)
+                {
+                    var h = HiddenBalls[i] ?? (HiddenBalls[i] = new List<int>());
+                    while (h.Count < Tubes[i].Count) h.Add(0);
+                    if (h.Count > Tubes[i].Count) h.RemoveRange(Tubes[i].Count, h.Count - Tubes[i].Count);
+                    for (int s = 0; s < h.Count; s++) h[s] = h[s] != 0 && Tubes[i][s] > 0 ? 1 : 0;   // a "?" cell is hidden anyway
+                }
+                TrimHidden();
+            }
         }
 
         public EditorLevel Clone() => JsonConvert.DeserializeObject<EditorLevel>(JsonConvert.SerializeObject(this));
@@ -158,6 +182,22 @@ namespace BallSortGame.LevelEditor
 
         /// <summary>The tube's bottom ball is heavy.</summary>
         public bool IsHeavy(int tube) => HeavyFlags != null && tube < HeavyFlags.Count && HeavyFlags[tube] != 0 && Tubes[tube].Count > 0;
+
+        /// <summary>The game hides this ball: a "?" cell, or a coloured ball flagged in <see cref="HiddenBalls"/>.</summary>
+        public bool IsBallHidden(int tube, int slot)
+        {
+            if (tube < 0 || tube >= Tubes.Count || slot < 0 || slot >= Tubes[tube].Count) return false;
+            if (Tubes[tube][slot] == Random) return true;
+            return HiddenBalls != null && tube < HiddenBalls.Count && HiddenBalls[tube] != null && slot < HiddenBalls[tube].Count && HiddenBalls[tube][slot] != 0;
+        }
+
+        /// <summary>Number of balls the game hides: "?" cells plus hidden coloured balls.</summary>
+        public int HiddenBallCount
+        {
+            get { int n = 0; for (int i = 0; i < Tubes.Count; i++) for (int s = 0; s < Tubes[i].Count; s++) if (IsBallHidden(i, s)) n++; return n; }
+        }
+
+        public bool HasHiddenBalls => HasRandom || HiddenBalls != null;
 
         /// <summary>Heavy flags for a <see cref="LevelData"/> (null when no ball is heavy).</summary>
         public List<int> HeavyOrNull()
@@ -205,20 +245,43 @@ namespace BallSortGame.LevelEditor
 
         /// <summary>
         /// Hidden-ball mask for a <see cref="LevelData"/> made from this layout: top-first rows of <see cref="Capacity"/>
-        /// cells parallel to <see cref="LevelFiller.ToTopFirst"/>, 1 where the cell is a "?" (the filler picks its colour,
-        /// the game keeps it hidden until it is the top ball). Null when there is no "?".
+        /// cells parallel to <see cref="LevelFiller.ToTopFirst"/>, 1 where the cell is a "?" (the filler picks its colour)
+        /// or a hidden coloured ball; the game keeps those hidden until they are the top ball. Null when none is hidden.
         /// </summary>
         public List<List<int>> HiddenTopFirst()
         {
-            if (!HasRandom) return null;
+            if (!HasHiddenBalls) return null;
             var rows = new List<List<int>>(Tubes.Count);
-            foreach (var t in Tubes)
+            for (int i = 0; i < Tubes.Count; i++)
             {
                 var row = new List<int>(Capacity);
-                for (int s = Capacity - 1; s >= 0; s--) row.Add(s < t.Count && t[s] == Random ? 1 : 0);
+                for (int s = Capacity - 1; s >= 0; s--) row.Add(IsBallHidden(i, s) ? 1 : 0);
                 rows.Add(row);
             }
             return rows;
+        }
+
+        /// <summary>
+        /// Replaces every "?" cell with the colour <paramref name="board"/> (a fill of this layout) put there, so the
+        /// designer sees the balls and can hide chosen ones with <see cref="SetBallHidden"/>. False when nothing changed.
+        /// </summary>
+        public bool ApplyFill(BoardState board)
+        {
+            bool any = false;
+            for (int i = 0; i < Tubes.Count && i < board.TubeCount; i++)
+            {
+                var t = Tubes[i];
+                for (int s = 0; s < t.Count; s++)
+                {
+                    if (t[s] != Random) continue;
+                    int c = board.ColorAt(i, s);
+                    if (c <= 0) continue;
+                    t[s] = c;
+                    if (c > ColorCount) ColorCount = c;
+                    any = true;
+                }
+            }
+            return any;
         }
 
         /// <summary>Random slots the filler still has to fill (every colour needs exactly <see cref="Capacity"/> balls).</summary>
@@ -298,6 +361,7 @@ namespace BallSortGame.LevelEditor
             {
                 if (slot < 0 || slot >= t.Count) return false;
                 t.RemoveAt(slot);
+                if (HiddenBalls != null && tube < HiddenBalls.Count && slot < HiddenBalls[tube].Count) { HiddenBalls[tube].RemoveAt(slot); TrimHidden(); }
                 if (slot == 0) SetHeavy(tube, false);
                 return true;
             }
@@ -322,6 +386,7 @@ namespace BallSortGame.LevelEditor
             var next = value == 0 ? new List<int>() : Filled(Capacity, value);
             if (t.Count == next.Count && t.TrueForAll(c => c == value)) return false;
             Tubes[tube] = next;
+            if (HiddenBalls != null && tube < HiddenBalls.Count) { HiddenBalls[tube].Clear(); TrimHidden(); }
             if (value == 0) SetHeavy(tube, false);
             if (value > ColorCount) ColorCount = value;
             return true;
@@ -344,6 +409,39 @@ namespace BallSortGame.LevelEditor
         }
 
         /// <summary>
+        /// Hides (or shows) a coloured ball in the game; the layout keeps its colour. A "?" cell cannot be changed here.
+        /// <paramref name="building"/> skips the checks while <see cref="FromLevelData"/> is still adding the tubes.
+        /// </summary>
+        public bool SetBallHidden(int tube, int slot, bool hidden, bool building = false)
+        {
+            if (tube < 0 || slot < 0) return false;
+            if (!building)
+            {
+                if (tube >= Tubes.Count || slot >= Tubes[tube].Count || Tubes[tube][slot] == Random) return false;
+                if (IsBallHidden(tube, slot) == hidden) return false;
+            }
+            if (HiddenBalls == null)
+            {
+                if (!hidden) return false;
+                HiddenBalls = new List<List<int>>();
+            }
+            while (HiddenBalls.Count <= tube) HiddenBalls.Add(new List<int>());
+            var h = HiddenBalls[tube] ?? (HiddenBalls[tube] = new List<int>());
+            while (h.Count <= slot) h.Add(0);
+            h[slot] = hidden ? 1 : 0;
+            TrimHidden();
+            return true;
+        }
+
+        /// <summary>Drops the hidden-ball table when no flag is set.</summary>
+        void TrimHidden()
+        {
+            if (HiddenBalls == null) return;
+            foreach (var h in HiddenBalls) if (h != null) foreach (var v in h) if (v != 0) return;
+            HiddenBalls = null;
+        }
+
+        /// <summary>
         /// Sets a tube's one-way rule. An in-only tube is emptied (it starts empty by definition); an empty tube made
         /// out-only is filled with "?" so it starts with balls. Normal and hidden keep the contents.
         /// </summary>
@@ -358,7 +456,7 @@ namespace BallSortGame.LevelEditor
             }
             if (Kinds == null) Kinds = Filled(Tubes.Count, 0);
             Kinds[tube] = (int)kind;
-            if (kind == TubeKind.InOnly) { Tubes[tube].Clear(); SetHeavy(tube, false); }
+            if (kind == TubeKind.InOnly) { Tubes[tube].Clear(); SetHeavy(tube, false); if (HiddenBalls != null && tube < HiddenBalls.Count) { HiddenBalls[tube].Clear(); TrimHidden(); } }
             else if (kind == TubeKind.OutOnly && Tubes[tube].Count == 0) Tubes[tube] = Filled(Capacity, Random);
             return true;
         }
@@ -369,6 +467,7 @@ namespace BallSortGame.LevelEditor
             Tubes.Add(new List<int>());
             Kinds?.Add(0);
             HeavyFlags?.Add(0);
+            HiddenBalls?.Add(new List<int>());
             return true;
         }
 
@@ -386,6 +485,7 @@ namespace BallSortGame.LevelEditor
                 HeavyFlags.RemoveAt(tube);
                 if (HeavyFlags.TrueForAll(h => h == 0)) HeavyFlags = null;
             }
+            if (HiddenBalls != null && tube < HiddenBalls.Count) { HiddenBalls.RemoveAt(tube); TrimHidden(); }
             return true;
         }
 
@@ -395,6 +495,7 @@ namespace BallSortGame.LevelEditor
             (Tubes[a], Tubes[b]) = (Tubes[b], Tubes[a]);
             if (Kinds != null) (Kinds[a], Kinds[b]) = (Kinds[b], Kinds[a]);
             if (HeavyFlags != null) (HeavyFlags[a], HeavyFlags[b]) = (HeavyFlags[b], HeavyFlags[a]);
+            if (HiddenBalls != null && a < HiddenBalls.Count && b < HiddenBalls.Count) (HiddenBalls[a], HiddenBalls[b]) = (HiddenBalls[b], HiddenBalls[a]);
             return true;
         }
 
@@ -405,6 +506,7 @@ namespace BallSortGame.LevelEditor
             if (capacity == Capacity) return false;
             Capacity = capacity;
             foreach (var t in Tubes) if (t.Count > capacity) t.RemoveRange(capacity, t.Count - capacity);
+            if (HiddenBalls != null) { foreach (var h in HiddenBalls) if (h != null && h.Count > capacity) h.RemoveRange(capacity, h.Count - capacity); TrimHidden(); }
             return true;
         }
 
@@ -422,6 +524,7 @@ namespace BallSortGame.LevelEditor
             bool any = false;
             foreach (var t in Tubes) if (t.Count > 0) { t.Clear(); any = true; }
             HeavyFlags = null;
+            HiddenBalls = null;
             return any;
         }
     }
