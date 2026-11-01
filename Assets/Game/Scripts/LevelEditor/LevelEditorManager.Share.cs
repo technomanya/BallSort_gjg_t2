@@ -9,10 +9,10 @@ namespace BallSortGame.LevelEditor
 {
     /// <summary>
     /// SHARE: writes the pack the editor saves into (every level, seeds included) as <c>levels.json</c> somewhere the
-    /// designer can get at it, so levels made on one device reach the team. On Android the file goes to the public
-    /// Downloads folder through MediaStore (no storage permission needed on Android 10+) and the system share sheet
-    /// opens with it; in the Unity Editor and on desktop it goes to the Desktop and the JSON is also put on the
-    /// clipboard. A copy is always kept under <see cref="SaveDir"/>.
+    /// designer can get at it, and shows the path in the status line. Nothing is sent anywhere. On Android the file
+    /// goes to the public Downloads folder through MediaStore (no storage permission needed on Android 10+), so it
+    /// shows up in the Files app and over USB; in the Unity Editor and on desktop it goes to the Desktop and the JSON
+    /// is also put on the clipboard. A copy is always kept under <see cref="SaveDir"/>.
     /// </summary>
     public partial class LevelEditorManager
     {
@@ -47,40 +47,56 @@ namespace BallSortGame.LevelEditor
             {
 #if UNITY_ANDROID && !UNITY_EDITOR
                 string where = ShareAndroid(json);
-                Status($"Saved {ShareFileName} to {where}.", EditorUI.Good);
+                Status($"Saved {where}", EditorUI.Good);
 #elif UNITY_IOS && !UNITY_EDITOR
-                Status($"Saved {ShareFileName} to {local}.", EditorUI.Good);
+                Status($"Saved {local}", EditorUI.Good);
 #else
                 string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                 string path = string.IsNullOrEmpty(desktop) ? local : Path.Combine(desktop, ShareFileName);
                 File.WriteAllText(path, json);
                 GUIUtility.systemCopyBuffer = json;
-                Status($"Saved {ShareFileName} to {path} (and copied to the clipboard).", EditorUI.Good);
+                Status($"Saved {path} (and copied to the clipboard)", EditorUI.Good);
 #endif
             }
             catch (Exception e)
             {
-                Status($"Share failed: {e.Message}. Copy kept at {local}.", EditorUI.Bad);
+                Status($"Share failed: {e.Message}. Copy kept at {local}", EditorUI.Bad);
             }
         }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
         const string DownloadsDir = "Download";   // MediaStore relative path of the public Downloads folder
 
-        /// <summary>Writes the JSON to Downloads/levels.json and opens the share sheet with it. Returns where it went.</summary>
+        /// <summary>
+        /// Writes the JSON to the public Downloads folder and returns the full path. Android 10+ goes through MediaStore
+        /// (no permission needed); Android 9 and older write the plain file, which needs the storage permission, and
+        /// otherwise the copy under <see cref="SaveDir"/> is what the designer gets.
+        /// </summary>
         static string ShareAndroid(string json)
         {
             var bytes = Encoding.UTF8.GetBytes(json);
-            using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
+            string downloads;
+            using (var env = new AndroidJavaClass("android.os.Environment"))
+            using (var dir = env.CallStatic<AndroidJavaObject>("getExternalStoragePublicDirectory", DownloadsDir))
+                downloads = dir.Call<string>("getAbsolutePath");
+            string fullPath = downloads + "/" + ShareFileName;
+
+            int sdk;
+            using (var version = new AndroidJavaClass("android.os.Build$VERSION")) sdk = version.GetStatic<int>("SDK_INT");
+            if (sdk < 29)
             {
-                if (version.GetStatic<int>("SDK_INT") < 29) return ShareAndroidLegacy(bytes);
+                Directory.CreateDirectory(downloads);
+                File.WriteAllBytes(fullPath, bytes);
+                return fullPath;
             }
 
+            var jbytes = new sbyte[bytes.Length];   // JNI wants a Java byte[], which Unity maps to sbyte[]
+            Buffer.BlockCopy(bytes, 0, jbytes, 0, bytes.Length);
             using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
             using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
             using (var resolver = activity.Call<AndroidJavaObject>("getContentResolver"))
-            using (var downloads = new AndroidJavaClass("android.provider.MediaStore$Downloads"))
-            using (var collection = downloads.GetStatic<AndroidJavaObject>("EXTERNAL_CONTENT_URI"))
+            using (var collectionClass = new AndroidJavaClass("android.provider.MediaStore$Downloads"))
+            using (var collection = collectionClass.GetStatic<AndroidJavaObject>("EXTERNAL_CONTENT_URI"))
             {
                 // replace an earlier levels.json of ours so the name stays "levels" (another app's file cannot be touched;
                 // the system then names the new one "levels (1).json")
@@ -97,39 +113,14 @@ namespace BallSortGame.LevelEditor
                 }
                 if (uri == null) throw new IOException("MediaStore refused the file");
                 using (uri)
+                using (var stream = resolver.Call<AndroidJavaObject>("openOutputStream", uri))
                 {
-                    using (var stream = resolver.Call<AndroidJavaObject>("openOutputStream", uri))
-                    {
-                        stream.Call("write", (sbyte[])(Array)bytes);
-                        stream.Call("flush");
-                        stream.Call("close");
-                    }
-
-                    using (var intent = new AndroidJavaObject("android.content.Intent", "android.intent.action.SEND"))
-                    using (var intentClass = new AndroidJavaClass("android.content.Intent"))
-                    {
-                        intent.Call<AndroidJavaObject>("setType", "application/json").Dispose();
-                        intent.Call<AndroidJavaObject>("putExtra", "android.intent.extra.STREAM", uri).Dispose();
-                        intent.Call<AndroidJavaObject>("addFlags", 1).Dispose();   // FLAG_GRANT_READ_URI_PERMISSION
-                        using (var chooser = intentClass.CallStatic<AndroidJavaObject>("createChooser", intent, "Share " + ShareFileName))
-                            activity.Call("startActivity", chooser);
-                    }
+                    stream.Call("write", jbytes);
+                    stream.Call("flush");
+                    stream.Call("close");
                 }
             }
-            return DownloadsDir + "/" + ShareFileName;
-        }
-
-        /// <summary>Android 9 and older: plain file in the public Downloads folder (needs the storage permission).</summary>
-        static string ShareAndroidLegacy(byte[] bytes)
-        {
-            string dir;
-            using (var env = new AndroidJavaClass("android.os.Environment"))
-            using (var file = env.CallStatic<AndroidJavaObject>("getExternalStoragePublicDirectory", "Download"))
-                dir = file.Call<string>("getAbsolutePath");
-            Directory.CreateDirectory(dir);
-            string path = Path.Combine(dir, ShareFileName);
-            File.WriteAllBytes(path, bytes);
-            return path;
+            return fullPath;
         }
 #endif
     }
