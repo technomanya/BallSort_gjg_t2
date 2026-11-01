@@ -11,8 +11,8 @@ using UnityEngine.UI;
 namespace BallSortGame.UI
 {
     /// <summary>
-    /// Main menu over the dimmed board, wired like <see cref="GameHUD"/>: logo, coin balance, the MINI GAME button
-    /// and a tap-anywhere START (the whole backdrop is the button). Shown when the game opens and from the Home
+    /// Main menu over the dimmed board, wired like <see cref="GameHUD"/>: logo, coin balance, the bottom tab bar
+    /// (Mana Flip / HOME / Mana Garden) and a tap-anywhere START (the whole backdrop is the button). Shown when the game opens and from the Home
     /// buttons; the game is paused while it is up. Built by BallSort > Rebuild HUD (MainMenuBuilder).
     /// </summary>
     public class MainMenuView : MonoBehaviour
@@ -23,9 +23,11 @@ namespace BallSortGame.UI
 
         [Header("Widgets")]
         public Button startButton;
-        [Tooltip("Opens the mini game (Mana Flip, or Jump Path when the scene has no Mana Flip).")]
+        [Tooltip("Tab bar, left: opens the mini game (Mana Flip, or Jump Path when the scene has no Mana Flip).")]
         [FormerlySerializedAs("jumpPathButton")] public Button miniGameButton;
-        [Tooltip("Opens the Mana Garden; ManaGardenView adds one at runtime (top right) when this is empty.")]
+        [Tooltip("Tab bar, middle: the current tab; closes a mini game or garden page left open over the menu.")]
+        public Button homeButton;
+        [Tooltip("Tab bar, right: opens the Mana Garden; ManaGardenView adds one at runtime (top right) when this is empty.")]
         public Button gardenButton;
         public Text coinsText;
         public Text levelText;
@@ -52,8 +54,11 @@ namespace BallSortGame.UI
             if (logo != null) _logoHome = logo.anchoredPosition;
             Haptic.Bind(startButton);
             Haptic.Bind(miniGameButton);
+            Haptic.Bind(homeButton);
+            Haptic.Bind(gardenButton);
             if (startButton != null) startButton.onClick.AddListener(Play);
             if (miniGameButton != null) miniGameButton.onClick.AddListener(OpenMiniGame);
+            if (homeButton != null) homeButton.onClick.AddListener(Home);
             if (gardenButton != null) gardenButton.onClick.AddListener(OpenGarden);
             if (!showOnStart) gameObject.SetActive(false);
         }
@@ -121,6 +126,15 @@ namespace BallSortGame.UI
             var jumpPath = FindFirstObjectByType<JumpPathView>(FindObjectsInactive.Include);
             if (jumpPath != null) jumpPath.Open();
             else Debug.LogWarning("MainMenuView: no mini game in this scene.");
+        }
+
+        /// <summary>HOME tab: the menu is the home screen, so this only closes a page left open over it.</summary>
+        public void Home()
+        {
+            var manaFlip = FindFirstObjectByType<ManaFlipView>(FindObjectsInactive.Include);
+            if (manaFlip != null && manaFlip.IsOpen) manaFlip.Close();
+            var garden = FindFirstObjectByType<ManaGardenView>(FindObjectsInactive.Include);
+            if (garden != null && garden.IsOpen) garden.Close();
         }
 
         /// <summary>The Mana Garden opens over the menu; closing it comes back to the menu (still paused).</summary>

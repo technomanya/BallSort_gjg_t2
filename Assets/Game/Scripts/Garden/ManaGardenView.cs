@@ -231,7 +231,7 @@ namespace BallSortGame.Garden
         // Main menu button
         // =====================================================================
 
-        /// <summary>The menu's plant button; made here, top right, when the menu was built without one.</summary>
+        /// <summary>The menu's plant button: the tab-bar one when the menu has it (badge added here), else one made here, top right.</summary>
         void AttachMenuButton()
         {
             var menu = FindFirstObjectByType<MainMenuView>(FindObjectsInactive.Include);
@@ -247,6 +247,12 @@ namespace BallSortGame.Garden
                 Img("icon", bg.transform, _skin != null ? _skin.iconPlant : null, Green, new Vector2(0f, 4f), new Vector2(MenuButtonSize * 0.62f, MenuButtonSize * 0.62f)).raycastTarget = false;
                 _menuBadge = Badge(bg.transform, new Vector2(MenuButtonSize * 0.36f, MenuButtonSize * 0.4f), 64f, out _menuBadgeText);
                 menu.gardenButton = b;
+            }
+            else if (menu.gardenButton.transform.Find("badge") == null)
+            {
+                // the menu's own tab-bar button (MainMenuBuilder): the seed badge goes on its top right corner
+                float size = ((RectTransform)menu.gardenButton.transform).sizeDelta.x;
+                _menuBadge = Badge(menu.gardenButton.transform, new Vector2(size * 0.36f, size * 0.4f), 64f, out _menuBadgeText);
             }
             _menuButton = menu.gardenButton;
             _menuButton.onClick.RemoveListener(Open);

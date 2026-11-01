@@ -9,13 +9,36 @@ namespace BallSortGame.EditorTools
     /// <summary>
     /// Adds the main menu to the game canvas of the open scene, after the mockup: the board shows through a dim
     /// overlay, the logo sits in the middle and a tap anywhere starts the level. The coin balance keeps a pill
-    /// top left (LevelCoinsView copies it for the win screen); the MINI GAME button sits under the tap hint.
-    /// Menu: BallSort > Add Main Menu (also run by Rebuild HUD).
+    /// top left (LevelCoinsView copies it for the win screen); the bottom tab bar (gold-framed panel) holds the
+    /// Mana Flip, HOME and Mana Garden buttons.
+    /// Menu: BallSort > Add Main Menu (also run by Rebuild HUD); BallSort > Rebuild Main Menu replaces the one in the scene.
     /// </summary>
     public static class MainMenuBuilder
     {
         const string Name = "MainMenuView";
         static readonly Vector2 Center = new Vector2(0.5f, 0.5f);
+        static readonly Color PlantGreen = new Color(0.25f, 0.85f, 0.45f, 1f);   // the garden's sprout tint (ManaGardenView.Green)
+
+        /// <summary>Throws the scene's main menu away and builds it again from this file (layout edits); saves the scene.</summary>
+        [MenuItem("BallSort/Rebuild Main Menu")]
+        public static void Rebuild()
+        {
+            var hud = Object.FindFirstObjectByType<GameHUD>(FindObjectsInactive.Include);
+            if (hud == null)
+            {
+                Debug.LogWarning("Rebuild Main Menu: no GameHUD in the open scene.");
+                return;
+            }
+            var old = hud.mainMenu != null ? hud.mainMenu.transform : hud.transform.Find(Name);
+            if (old != null) Undo.DestroyObjectImmediate(old.gameObject);
+            hud.mainMenu = null;
+            Add();
+            BallSortSceneBuilder.ApplyWordArt(hud, NewUISkinBuilder.BuildSkin());
+            EditorUtility.SetDirty(hud);
+            EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
+            EditorSceneManager.SaveOpenScenes();
+            Debug.Log("Rebuild Main Menu: main menu rebuilt and the scene saved.");
+        }
 
         [MenuItem("BallSort/Add Main Menu")]
         public static void Add()
@@ -77,7 +100,7 @@ namespace BallSortGame.EditorTools
             BallSortSceneBuilder.Decor("coin", pill.transform, skin.coin, new Vector2(-105f, 0f), 84f);
             menu.coinsText = BallSortSceneBuilder.MakeText("text", pill.transform, Vector2.zero, Vector2.one, Center, new Vector2(40f, 2f), new Vector2(-80f, 0f), "0", 52, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             BallSortSceneBuilder.AddShadow(menu.coinsText.gameObject);
-            menu.miniGameButton = MiniGameButton(rt, skin);
+            NavBar(rt, skin, menu);
 
             Undo.RecordObject(hud, "Add Main Menu");
             hud.mainMenu = menu;
@@ -87,13 +110,26 @@ namespace BallSortGame.EditorTools
             Debug.Log("Add Main Menu: added " + hud.name + "/" + Name + "; save the scene to keep it.");
         }
 
-        /// <summary>Green "MINI GAME" button with a coin, under the tap hint; it catches its own taps, so START does not fire.</summary>
-        internal static Button MiniGameButton(RectTransform menuRoot, UISkin skin)
+        /// <summary>
+        /// Bottom tab bar on the gold-framed small panel (its lower frame sits under the screen edge like the booster bar):
+        /// Mana Flip (crystal) on the left, HOME raised in the middle inside a gold ring (the current tab), Mana Garden
+        /// (sprout) on the right. ManaGardenView adds its seed badge to the garden button at runtime.
+        /// </summary>
+        static void NavBar(RectTransform menuRoot, UISkin skin, MainMenuView menu)
         {
-            var btn = BallSortSceneBuilder.PillButton("btn - mini_game", menuRoot, new Vector2(0f, -720f), new Vector2(560f, 150f), skin.buttonRectGreen != null ? skin.buttonRectGreen : skin.buttonPill, "MINI GAME", 54);
-            var label = (RectTransform)btn.transform.Find("label");
-            label.offsetMin = new Vector2(110f, label.offsetMin.y);   // room for the coin on the left
-            BallSortSceneBuilder.Decor("coin", btn.transform, skin.coin, new Vector2(-190f, 4f), 96f).raycastTarget = false;
+            var bar = BallSortSceneBuilder.MakeImage("nav_bar", menuRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), Center, new Vector2(0f, 113f), new Vector2(900f, 346f), skin.pill, Color.white, Image.Type.Sliced);
+            menu.miniGameButton = NavButton("btn - mana_flip", bar.transform, new Vector2(-280f, 30f), skin, skin.rewardCrystal, 150f, 112f, Color.white);
+            menu.gardenButton = NavButton("btn - mana_garden", bar.transform, new Vector2(280f, 30f), skin, skin.iconPlant, 150f, 136f, PlantGreen);
+            BallSortSceneBuilder.Decor("ring", bar.transform, skin.circleFrame, new Vector2(0f, 45f), 216f);
+            menu.homeButton = NavButton("btn - home", bar.transform, new Vector2(0f, 45f), skin, skin.iconHome, 190f, 116f, Color.white);
+        }
+
+        /// <summary>Pink circle button of the kit with a tinted icon; it catches its own taps, so START does not fire.</summary>
+        static Button NavButton(string name, Transform parent, Vector2 pos, UISkin skin, Sprite icon, float size, float iconSize, Color iconColor)
+        {
+            var btn = BallSortSceneBuilder.IconButton(name, parent, Center, pos, skin.buttonCircle, size, icon, iconSize, false);
+            var img = btn.transform.Find("img - icon").GetComponent<Image>();
+            img.color = iconColor;
             return btn;
         }
     }
