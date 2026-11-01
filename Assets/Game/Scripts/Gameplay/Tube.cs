@@ -41,7 +41,7 @@ namespace BallSortGame.Gameplay
 
         /// <summary>
         /// Number of same-colored balls at the top. A hidden ball ends the run (its colour is not known yet), and so
-        /// does a heavy ball under the run (it never leaves the bottom with it).
+        /// does a heavy ball under the run (it never leaves with the balls above it); a heavy top ball is a run of one.
         /// </summary>
         public int TopBallSameCount
         {
@@ -54,8 +54,14 @@ namespace BallSortGame.Gameplay
             }
         }
 
-        /// <summary>The bottom ball is heavy.</summary>
-        public bool IsHeavyBottom => _balls.Count > 0 && _balls[0].IsHeavy;
+        /// <summary>The top ball is heavy: it moves alone, and only into an empty tube.</summary>
+        public bool IsTopHeavy => _balls.Count > 0 && TopBall.IsHeavy;
+
+        /// <summary>Heavy balls as a bit mask, bit k = the k-th ball from the bottom (see <see cref="BoardState.HeavyMask"/>).</summary>
+        public int HeavyMask
+        {
+            get { int m = 0; for (int k = 0; k < _balls.Count && k < 31; k++) if (_balls[k].IsHeavy) m |= 1 << k; return m; }
+        }
 
         /// <summary>Any ball whose colour is still hidden.</summary>
         public bool HasHiddenBall
@@ -88,9 +94,6 @@ namespace BallSortGame.Gameplay
 
         /// <summary>Full and one color. The little (spare) tube is never completed: it is only a parking spot. Nor is a covered tube.</summary>
         public bool IsCompleted => !IsSpare && !IsHiddenTube && IsFull && IsUniform;
-
-        /// <summary>Only the heavy ball is left in the tube: the one state in which it can move (into an empty tube).</summary>
-        public bool IsHeavyOnly => _balls.Count == 1 && _balls[0].IsHeavy;
 
         /// <summary>Reference IsIdentical: empty counts as identical.</summary>
         public bool IsIdentical => IsEmpty || IsCompleted;
@@ -285,14 +288,14 @@ namespace BallSortGame.Gameplay
         /// <summary>
         /// Reference TubeData.CanImport(source): empty target accepts anything; otherwise not full and same top color.
         /// One-way tubes: nothing leaves an in-only source, nothing enters an out-only target. A hidden tube does neither.
-        /// Heavy balls: a heavy ball (alone in its tube, else it is not the top) only goes into an empty tube.
+        /// Heavy balls: a heavy ball on top of its tube only goes into an empty tube (and moves alone).
         /// Mirrors <see cref="BoardState.CanImport"/>.
         /// </summary>
         public bool CanImport(Tube source)
         {
             if (source == null || source == this || !source.CanExport) return false;
             if (IsOutOnly || IsHiddenTube) return false;
-            if (source.IsHeavyOnly) return IsEmpty;
+            if (source.IsTopHeavy) return IsEmpty;
             if (IsEmpty) return true;
             if (IsFull) return false;
             return source.TopBall.ColorIndex == TopBall.ColorIndex;

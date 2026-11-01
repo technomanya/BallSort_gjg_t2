@@ -11,8 +11,8 @@ namespace BallSortGame.LevelEditor
     /// Tubes are bottom-first stacks without gaps; a cell is a colour 1..N or <see cref="Random"/> (a luck slot that
     /// the filler fills per seed). The tube preset follows from its cells: all colours = Deterministic,
     /// all random = Luck, mixed = PartialLuck, no cells = Empty. A tube may also be one-way (<see cref="Kinds"/>):
-    /// in-only tubes start empty, out-only tubes start with balls. A tube's bottom ball may be heavy
-    /// (<see cref="HeavyFlags"/>, the cannonball obstacle): still a colour, but it only moves into an empty tube.
+    /// in-only tubes start empty, out-only tubes start with balls. Any ball may be heavy
+    /// (<see cref="HeavyFlags"/>, the cannonball obstacle): still a colour, but it moves alone and only into an empty tube.
     /// No Unity types, so it also runs off the main thread.
     /// </summary>
     [Serializable]
@@ -32,7 +32,7 @@ namespace BallSortGame.LevelEditor
         [JsonProperty("tubes")] public List<List<int>> Tubes = new List<List<int>>();
         /// <summary>Per-tube <see cref="TubeKind"/> as ints, parallel to <see cref="Tubes"/>; null = every tube normal.</summary>
         [JsonProperty("kinds", NullValueHandling = NullValueHandling.Ignore)] public List<int> Kinds;
-        /// <summary>Per-tube 0/1, parallel to <see cref="Tubes"/>: 1 = the tube's bottom ball is heavy; null = no heavy ball.</summary>
+        /// <summary>Per-tube bit mask, parallel to <see cref="Tubes"/>: bit s = the ball in slot s (bottom-first) is heavy; null = no heavy ball.</summary>
         [JsonProperty("heavy", NullValueHandling = NullValueHandling.Ignore)] public List<int> HeavyFlags;
         /// <summary>
         /// Per-tube, bottom-first 0/1 parallel to <see cref="Tubes"/>: 1 = the ball keeps its colour in the layout but
@@ -47,7 +47,7 @@ namespace BallSortGame.LevelEditor
         public bool HasRandom => RandomSlots > 0;
         public int HeavyCount
         {
-            get { int n = 0; for (int i = 0; i < Tubes.Count; i++) if (IsHeavy(i)) n++; return n; }
+            get { int n = 0; for (int i = 0; i < Tubes.Count; i++) for (int s = 0; s < Tubes[i].Count; s++) if (IsHeavy(i, s)) n++; return n; }
         }
         public bool HasHeavy => HeavyCount > 0;
         public bool HasSpecialTubes => CountKind(TubeKind.InOnly) + CountKind(TubeKind.OutOnly) + CountKind(TubeKind.Hidden) > 0;
@@ -156,7 +156,7 @@ namespace BallSortGame.LevelEditor
             {
                 while (HeavyFlags.Count < Tubes.Count) HeavyFlags.Add(0);
                 if (HeavyFlags.Count > Tubes.Count) HeavyFlags.RemoveRange(Tubes.Count, HeavyFlags.Count - Tubes.Count);
-                for (int i = 0; i < HeavyFlags.Count; i++) HeavyFlags[i] = HeavyFlags[i] != 0 && Tubes[i].Count > 0 ? 1 : 0;   // a weight needs a ball
+                for (int i = 0; i < HeavyFlags.Count; i++) HeavyFlags[i] = HeavyFlags[i] < 0 ? 0 : HeavyFlags[i] & ((1 << Tubes[i].Count) - 1);   // a weight needs a ball
                 if (HeavyFlags.TrueForAll(h => h == 0)) HeavyFlags = null;
             }
             if (HiddenBalls != null)
@@ -180,8 +180,15 @@ namespace BallSortGame.LevelEditor
 
         public TubeKind KindOf(int tube) => Kinds != null && tube < Kinds.Count ? (TubeKind)Kinds[tube] : TubeKind.Normal;
 
-        /// <summary>The tube's bottom ball is heavy.</summary>
-        public bool IsHeavy(int tube) => HeavyFlags != null && tube < HeavyFlags.Count && HeavyFlags[tube] != 0 && Tubes[tube].Count > 0;
+        /// <summary>The ball in <paramref name="slot"/> (bottom-first) of the tube is heavy.</summary>
+        public bool IsHeavy(int tube, int slot) => slot >= 0 && slot < Tubes[tube].Count && ((HeavyMaskOf(tube) >> slot) & 1) != 0;
+
+        /// <summary>Heavy balls of the tube as a bit mask over its balls (bit s = slot s, bottom-first).</summary>
+        public int HeavyMaskOf(int tube)
+        {
+            if (HeavyFlags == null || tube >= HeavyFlags.Count || HeavyFlags[tube] <= 0) return 0;
+            return HeavyFlags[tube] & ((1 << Tubes[tube].Count) - 1);
+        }
 
         /// <summary>The game hides this ball: a "?" cell, or a coloured ball flagged in <see cref="HiddenBalls"/>.</summary>
         public bool IsBallHidden(int tube, int slot)
@@ -199,12 +206,12 @@ namespace BallSortGame.LevelEditor
 
         public bool HasHiddenBalls => HasRandom || HiddenBalls != null;
 
-        /// <summary>Heavy flags for a <see cref="LevelData"/> (null when no ball is heavy).</summary>
+        /// <summary>Heavy masks for a <see cref="LevelData"/> (null when no ball is heavy).</summary>
         public List<int> HeavyOrNull()
         {
             if (!HasHeavy) return null;
             var l = new List<int>(Tubes.Count);
-            for (int i = 0; i < Tubes.Count; i++) l.Add(IsHeavy(i) ? 1 : 0);
+            for (int i = 0; i < Tubes.Count; i++) l.Add(HeavyMaskOf(i));
             return l;
         }
 
@@ -304,7 +311,7 @@ namespace BallSortGame.LevelEditor
                 var t = Tubes[i];
                 var fixedCells = new int[t.Count];
                 for (int s = 0; s < t.Count; s++) fixedCells[s] = t[s] == Random ? 0 : t[s];
-                d.Tubes.Add(new TubeSpec { Preset = PresetOf(i), Kind = KindOf(i), Heavy = IsHeavy(i), Capacity = Capacity, Fixed = fixedCells, FillCount = t.Count });
+                d.Tubes.Add(new TubeSpec { Preset = PresetOf(i), Kind = KindOf(i), HeavyMask = HeavyMaskOf(i), Capacity = Capacity, Fixed = fixedCells, FillCount = t.Count });
             }
             return d;
         }
@@ -352,7 +359,7 @@ namespace BallSortGame.LevelEditor
 
         /// <summary>
         /// Paints <paramref name="value"/> into a slot. 0 erases the ball (balls above drop down); a slot above the
-        /// stack appends to the stack, since balls cannot float. Erasing the bottom ball takes its weight with it.
+        /// stack appends to the stack, since balls cannot float. Erasing a ball takes its weight with it.
         /// </summary>
         public bool Paint(int tube, int slot, int value)
         {
@@ -362,7 +369,7 @@ namespace BallSortGame.LevelEditor
                 if (slot < 0 || slot >= t.Count) return false;
                 t.RemoveAt(slot);
                 if (HiddenBalls != null && tube < HiddenBalls.Count && slot < HiddenBalls[tube].Count) { HiddenBalls[tube].RemoveAt(slot); TrimHidden(); }
-                if (slot == 0) SetHeavy(tube, false);
+                RemoveHeavySlot(tube, slot);
                 return true;
             }
             if (slot < t.Count)
@@ -387,25 +394,49 @@ namespace BallSortGame.LevelEditor
             if (t.Count == next.Count && t.TrueForAll(c => c == value)) return false;
             Tubes[tube] = next;
             if (HiddenBalls != null && tube < HiddenBalls.Count) { HiddenBalls[tube].Clear(); TrimHidden(); }
-            if (value == 0) SetHeavy(tube, false);
+            if (value == 0) ClearHeavy(tube);
             if (value > ColorCount) ColorCount = value;
             return true;
         }
 
-        /// <summary>Makes the tube's bottom ball heavy (needs a ball) or normal again.</summary>
-        public bool SetHeavy(int tube, bool heavy)
+        /// <summary>Makes the ball in <paramref name="slot"/> (bottom-first) heavy, or normal again. Needs a ball there.</summary>
+        public bool SetHeavy(int tube, int slot, bool heavy)
         {
-            if (tube < 0 || tube >= Tubes.Count) return false;
-            if (heavy && Tubes[tube].Count == 0) return false;
-            if (IsHeavy(tube) == heavy) return false;
+            if (tube < 0 || tube >= Tubes.Count || slot < 0 || slot >= Tubes[tube].Count) return false;
+            if (IsHeavy(tube, slot) == heavy) return false;
             if (HeavyFlags == null)
             {
                 if (!heavy) return false;
                 HeavyFlags = Filled(Tubes.Count, 0);
             }
-            HeavyFlags[tube] = heavy ? 1 : 0;
-            if (HeavyFlags.TrueForAll(h => h == 0)) HeavyFlags = null;
+            int mask = HeavyMaskOf(tube);
+            HeavyFlags[tube] = heavy ? mask | (1 << slot) : mask & ~(1 << slot);
+            TrimHeavy();
             return true;
+        }
+
+        /// <summary>Takes every weight off the tube.</summary>
+        void ClearHeavy(int tube)
+        {
+            if (HeavyFlags == null || tube >= HeavyFlags.Count) return;
+            HeavyFlags[tube] = 0;
+            TrimHeavy();
+        }
+
+        /// <summary>A ball left slot <paramref name="slot"/>: its weight goes with it and the weights above drop one slot.</summary>
+        void RemoveHeavySlot(int tube, int slot)
+        {
+            if (HeavyFlags == null || tube >= HeavyFlags.Count || HeavyFlags[tube] <= 0) return;
+            int mask = HeavyFlags[tube];
+            int below = mask & ((1 << slot) - 1);
+            int above = mask >> (slot + 1);
+            HeavyFlags[tube] = below | (above << slot);
+            TrimHeavy();
+        }
+
+        void TrimHeavy()
+        {
+            if (HeavyFlags != null && HeavyFlags.TrueForAll(h => h == 0)) HeavyFlags = null;
         }
 
         /// <summary>
@@ -456,7 +487,7 @@ namespace BallSortGame.LevelEditor
             }
             if (Kinds == null) Kinds = Filled(Tubes.Count, 0);
             Kinds[tube] = (int)kind;
-            if (kind == TubeKind.InOnly) { Tubes[tube].Clear(); SetHeavy(tube, false); if (HiddenBalls != null && tube < HiddenBalls.Count) { HiddenBalls[tube].Clear(); TrimHidden(); } }
+            if (kind == TubeKind.InOnly) { Tubes[tube].Clear(); ClearHeavy(tube); if (HiddenBalls != null && tube < HiddenBalls.Count) { HiddenBalls[tube].Clear(); TrimHidden(); } }
             else if (kind == TubeKind.OutOnly && Tubes[tube].Count == 0) Tubes[tube] = Filled(Capacity, Random);
             return true;
         }

@@ -22,7 +22,7 @@ namespace BallSortGame.UI
         [Tooltip("Top left: restarts the level.")]
         public Button resetButton;
         public Button settingsButton;
-        [Tooltip("Top left coin button: opens the mini game (Mana Flip).")]
+        [Tooltip("Optional coin button: opens the mini game (Mana Flip). Not built by Rebuild HUD; the mini game opens from the main menu.")]
         public Button miniGameButton;
         public GameObject settingsPanel;
         public Button homeButton;

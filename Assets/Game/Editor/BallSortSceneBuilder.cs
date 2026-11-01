@@ -18,8 +18,8 @@ namespace BallSortGame.EditorTools
     /// scene (and the background), keeping the camera, GameManager and prefabs: that is the one to run after a UI change.
     ///
     /// Layout follows the UI mockups at the 1080x2340 reference resolution (mockup pixels x 1.617):
-    /// top bar (coin button / gold LEVEL pill / settings button; MAIN MENU is on the settings page), the gold-framed booster bar at the
-    /// bottom (undo / shuffle / add tube / restart) with the 'i' info panel, the settings page (gold-framed panel: back button,
+    /// top bar (restart button / gold LEVEL pill / settings button; MAIN MENU is on the settings page), the gold-framed booster bar at the
+    /// bottom (undo / shuffle / add tube / little tube) with the 'i' info panel, the settings page (gold-framed panel: back button,
     /// haptic / music / sound), the "OUT OF MOVES" and "WELL DONE" popups (gold frames, stadium buttons inside the panel) and the
     /// main menu (logo over the dimmed board, tap to play).
     /// </summary>
@@ -347,24 +347,24 @@ namespace BallSortGame.EditorTools
                 EditorUtility.SetDirty(gm);
             }
 
-            // ---- top bar: coin button (mini game) left, gold LEVEL pill under the middle, settings right
+            // ---- top bar: restart left, gold LEVEL pill under the middle, settings right (the mini game opens from the main menu)
             var topBar = MakeRect("top_bar", root, new Vector2(0, 1), new Vector2(1, 1), Center, new Vector2(0, -140), new Vector2(0, 280));
-            hud.miniGameButton = IconButton("btn - coins", topBar, new Vector2(0, 0.5f), new Vector2(121, 7), skin.buttonSquare, 146, skin.coin, 96);
+            hud.resetButton = IconButton("btn - restart", topBar, new Vector2(0, 0.5f), new Vector2(121, 7), skin.buttonSquare, 146, skin.iconRestart, 100);
+            hud.miniGameButton = null;
             hud.settingsButton = IconButton("btn - settings", topBar, new Vector2(1, 0.5f), new Vector2(-121, 7), skin.buttonSquare, 146, skin.iconSettings, 100);
             var levelBg = MakeImage("level_pill", topBar, Center, Center, Center, new Vector2(0, -112), new Vector2(400, 150), skin.buttonPill, Color.white, Image.Type.Sliced);
             hud.levelText = MakeText("text", levelBg.rectTransform, Vector2.zero, Vector2.one, Center, new Vector2(0, 2), new Vector2(-24, 0), "LEVEL 1", 54, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             AddShadow(hud.levelText.gameObject);
 
-            // ---- booster bar: gold-framed panel running off the bottom edge, undo / shuffle / add tube / restart and the 'i' button
+            // ---- booster bar: gold-framed panel running off the bottom edge, undo / shuffle / add tube / little tube and the 'i' button
             var bar = MakeImage("booster_bar", root, new Vector2(0.5f, 0), new Vector2(0.5f, 0), Center, new Vector2(0, 110), new Vector2(776, 340), skin.pill, Color.white, Image.Type.Sliced);
             hud.undoButton = Booster("btn - undo", bar.transform, -270, 20, skin, skin.iconUndo, out var undoCount, "5");
             hud.shuffleButton = Booster("btn - shuffle", bar.transform, -90, 20, skin, skin.iconShuffle, out _, null);
             hud.addTubeButton = Booster("btn - add_tube", bar.transform, 90, 20, skin, skin.iconAddTube, out var addCount, "1");
-            hud.resetButton = Booster("btn - restart", bar.transform, 270, 20, skin, skin.iconRestart, out _, null);
+            hud.smallTubeButton = Booster("btn - add_small_tube", bar.transform, 270, 20, skin, skin.iconAddSmallTube, out var smallCount, "1");
             hud.undoCountText = undoCount;
             hud.addTubeCountText = addCount;
-            hud.smallTubeButton = null;       // the mockup bar has four boosters; the little tube stays in the game (GameManager.AddSmallTube)
-            hud.smallTubeCountText = null;
+            hud.smallTubeCountText = smallCount;
             var info = MakeImage("btn - info", bar.transform, new Vector2(0, 1), new Vector2(0, 1), Center, new Vector2(26, -4), new Vector2(64, 64), skin.buttonCircle, Color.white, Image.Type.Simple);
             hud.boosterInfoButton = info.gameObject.AddComponent<Button>();
             hud.boosterInfoButton.targetGraphic = info;
@@ -378,7 +378,7 @@ namespace BallSortGame.EditorTools
             InfoRow(infoPanel.transform, 118, skin.iconUndo, "Undo your move");
             InfoRow(infoPanel.transform, 21, skin.iconShuffle, "Shuffle your balls");
             InfoRow(infoPanel.transform, -92, skin.iconAddTube, "Add a tube");
-            InfoRow(infoPanel.transform, -205, skin.iconRestart, "Restart the round");
+            InfoRow(infoPanel.transform, -205, skin.iconAddSmallTube, "Add a little tube");
             hud.boosterInfoPanel = infoPanel.gameObject;
 
             // ---- toast: above the booster bar

@@ -23,8 +23,9 @@ namespace BallSortGame.Gameplay
 
         public int ColorIndex { get; private set; }
         /// <summary>
-        /// Heavy ball (the cannonball obstacle): a normal coloured ball with a weight drawn on it. It only ever sits at
-        /// the bottom of a tube, so it only moves into an empty tube, alone. See <see cref="SetHeavy"/>.
+        /// Heavy ball (the cannonball obstacle): a normal coloured ball with a weight drawn on it. It may start anywhere
+        /// in a tube; when the player moves it, it goes alone and only into an empty tube, so it sinks to the bottom.
+        /// See <see cref="SetHeavy"/>.
         /// </summary>
         public bool IsHeavy { get; private set; }
         public bool IsMoving => _moving;

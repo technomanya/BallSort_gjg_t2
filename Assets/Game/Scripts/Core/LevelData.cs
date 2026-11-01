@@ -31,9 +31,9 @@ namespace BallSortGame.Core
         /// </summary>
         [JsonProperty("hidden", NullValueHandling = NullValueHandling.Ignore)] public List<List<int>> Hidden;
         /// <summary>
-        /// Heavy balls (the cannonball obstacle), one flag per tube: 1 = the bottom ball of that tube is heavy. A heavy
-        /// ball is a normal coloured ball that only ever sits at the bottom, so it only moves into an empty tube.
-        /// Absent = no heavy ball.
+        /// Heavy balls (the cannonball obstacle), one bit mask per tube: bit s set = the s-th ball from the bottom is
+        /// heavy (so 1 = the bottom ball, the old form). A heavy ball is a normal coloured ball that moves alone and only
+        /// into an empty tube, where it lands at the bottom; a run of balls above it moves without it. Absent = none.
         /// </summary>
         [JsonProperty("heavy", NullValueHandling = NullValueHandling.Ignore)] public List<int> Heavy;
 
@@ -72,8 +72,11 @@ namespace BallSortGame.Core
         public bool IsHidden(int tube, int topFirstIndex) =>
             Hidden != null && tube < Hidden.Count && Hidden[tube] != null && topFirstIndex < Hidden[tube].Count && Hidden[tube][topFirstIndex] != 0;
 
-        /// <summary>Whether the bottom ball of <paramref name="tube"/> is heavy.</summary>
-        public bool IsHeavyBottom(int tube) => Heavy != null && tube < Heavy.Count && Heavy[tube] != 0;
+        /// <summary>Heavy balls of <paramref name="tube"/> as a bit mask (bit s = the s-th ball from the bottom).</summary>
+        public int HeavyMask(int tube) => Heavy != null && tube < Heavy.Count && Heavy[tube] > 0 ? Heavy[tube] : 0;
+
+        /// <summary>Whether the <paramref name="ballFromBottom"/>-th ball (0 = bottom) of <paramref name="tube"/> is heavy.</summary>
+        public bool IsHeavyAt(int tube, int ballFromBottom) => ballFromBottom >= 0 && ballFromBottom < 31 && ((HeavyMask(tube) >> ballFromBottom) & 1) != 0;
 
         [JsonIgnore] public bool HasHeavyBalls
         {

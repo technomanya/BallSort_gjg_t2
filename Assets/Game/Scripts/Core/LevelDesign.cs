@@ -27,8 +27,8 @@ namespace BallSortGame.Core
         public int Capacity = 4;
         /// <summary>Bottom-first colours for Deterministic / PartialLuck tubes; 0 = luck slot. Null or shorter than Capacity = remaining slots are luck slots.</summary>
         public int[] Fixed;
-        /// <summary>The bottom ball is heavy (the cannonball obstacle): it only ever moves into an empty tube. Needs a bottom ball.</summary>
-        public bool Heavy;
+        /// <summary>Heavy balls (the cannonball obstacle) as a bit mask, bit s = the s-th ball from the bottom: each only ever moves alone into an empty tube. Every bit needs a ball.</summary>
+        public int HeavyMask;
         /// <summary>Slots this tube has balls in. Luck/Partial tubes are full unless <see cref="FillCount"/> says otherwise.</summary>
         public int FillCount = -1;
 
@@ -94,7 +94,8 @@ namespace BallSortGame.Core
 
         /// <summary>
         /// Covers up to <paramref name="count"/> filled tubes (<see cref="TubeKind.Hidden"/>), picked at random from
-        /// <paramref name="seed"/>: never two side by side, so every hidden tube has a neighbour that can open it.
+        /// <paramref name="seed"/>: never two side by side in the same row (<see cref="TubeRows"/>), so every hidden tube
+        /// has a physical neighbour that can open it.
         /// Returns how many tubes were covered.
         /// </summary>
         public int HideTubes(int count, int seed)
@@ -112,8 +113,10 @@ namespace BallSortGame.Core
             foreach (int i in candidates)
             {
                 if (hidden >= count) break;
-                if (i > 0 && Tubes[i - 1].Kind == TubeKind.Hidden) continue;
-                if (i + 1 < Tubes.Count && Tubes[i + 1].Kind == TubeKind.Hidden) continue;
+                int l = TubeRows.Left(i, Tubes.Count), r = TubeRows.Right(i, Tubes.Count);
+                if (l < 0 && r < 0) continue;   // alone in its row: nothing could ever open it
+                if (l >= 0 && Tubes[l].Kind == TubeKind.Hidden) continue;
+                if (r >= 0 && Tubes[r].Kind == TubeKind.Hidden) continue;
                 Tubes[i].Kind = TubeKind.Hidden;
                 hidden++;
             }
@@ -134,7 +137,7 @@ namespace BallSortGame.Core
                 int fill = t.EffectiveFillCount;
                 if (t.Kind == TubeKind.InOnly && fill > 0) { error = "an in-only tube must start empty"; return null; }
                 if (t.Kind == TubeKind.OutOnly && fill == 0) { error = "an out-only tube must start with balls"; return null; }
-                if (t.Heavy && fill == 0) { error = "a heavy ball needs a ball: the tube is empty"; return null; }
+                if (t.HeavyMask < 0 || (t.HeavyMask >> fill) != 0) { error = "a heavy ball needs a ball: the weight sits above the tube's balls"; return null; }
                 for (int s = 0; s < fill; s++)
                 {
                     int f = t.FixedAt(s);

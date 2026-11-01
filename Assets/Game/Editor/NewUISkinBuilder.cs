@@ -361,6 +361,7 @@ namespace BallSortGame.EditorTools
             IconButton(hud.resetButton, skin.buttonSquare, skin.iconRestart, true);
             Badge(hud.undoCountText, skin.redCircle);
             Badge(hud.addTubeCountText, skin.redCircle);
+            Badge(hud.smallTubeCountText, skin.redCircle);
             if (hud.boosterInfoButton != null) Bg(hud.boosterInfoButton.GetComponent<Image>(), skin.buttonCircle, false);
             if (hud.boosterInfoPanel != null) Bg(hud.boosterInfoPanel.GetComponent<Image>(), skin.panelFlat, true);
             var bar = hud.transform.Find("booster_bar");

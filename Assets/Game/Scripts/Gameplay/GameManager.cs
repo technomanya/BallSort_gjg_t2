@@ -36,7 +36,7 @@ namespace BallSortGame.Gameplay
         public Sprite hiddenTubeSprite;
         [Tooltip("Color index 1 uses element 0, index 2 element 1, ...")]
         public Sprite[] ballSprites;
-        [Tooltip("Weight drawn over a heavy ball (Art/Balls/NewBalls/Cannonball): a heavy ball sits at the bottom of its tube and only moves into an empty tube.")]
+        [Tooltip("Weight drawn over a heavy ball (Art/Balls/NewBalls/Cannonball): a heavy ball moves alone and only into an empty tube, where it sinks to the bottom.")]
         public Sprite heavyBallSprite;
         public float TubeWidth = 1.81f;
         public float TubeHeight = 4.8f;
@@ -46,7 +46,7 @@ namespace BallSortGame.Gameplay
         public float LiftY = 3.05f;
         [Tooltip("Rows with fewer tubes than this keep the width of an AvgSpaceCount row and spread evenly (reference TubeLayout).")]
         public int AvgSpaceCount = 5;
-        public int MaxTubesPerRow = 7;
+        public int MaxTubesPerRow = Core.TubeRows.DefaultMaxPerRow;
         public float RowGap = 6.3f;
 
         [Header("Motion")]
@@ -144,6 +144,8 @@ namespace BallSortGame.Gameplay
         int _addedSmallTubes;
         int _capacity;
         Coroutine _noMoveCheck;
+        /// <summary>Hashes of the boards played in this attempt: a lost board fails once no move leaves them.</summary>
+        readonly HashSet<ulong> _seenBoards = new HashSet<ulong>();
 
         void Awake()
         {
@@ -259,7 +261,7 @@ namespace BallSortGame.Gameplay
 
         /// <inheritdoc cref="Preview(List{List{int}}, int)"/>
         /// <param name="kinds">Per-tube <see cref="TubeKind"/> as ints (null = all normal).</param>
-        /// <param name="heavy">Per-tube 0/1: the bottom ball is heavy (null = none).</param>
+        /// <param name="heavy">Per-tube bit mask, bit k = the k-th ball from the bottom is heavy (null = none).</param>
         /// <param name="hiddenBalls">Per-tube bottom-first 0/1: a coloured ball the game hides; drawn in colour with a "?" (null = none).</param>
         public void Preview(List<List<int>> tubesBottomFirst, int capacity, IList<int> kinds, IList<int> heavy, IList<List<int>> hiddenBalls)
         {
@@ -276,7 +278,9 @@ namespace BallSortGame.Gameplay
                 var kind = kinds != null && i < kinds.Count ? (TubeKind)kinds[i] : TubeKind.Normal;
                 var tube = CreateTube(i, kind);
                 tube.SetBalls(tubesBottomFirst[i], v => v > 0 ? CreateBall(v) : CreateUnknownBall());
-                if (heavy != null && i < heavy.Count && heavy[i] != 0 && tube.Count > 0) tube.Balls[0].SetHeavy(true, heavyBallSprite);
+                if (heavy != null && i < heavy.Count && heavy[i] > 0)
+                    for (int k = 0; k < tube.Count && k < 31; k++)
+                        if (((heavy[i] >> k) & 1) != 0) tube.Balls[k].SetHeavy(true, heavyBallSprite);
                 if (hiddenBalls != null && i < hiddenBalls.Count && hiddenBalls[i] != null)
                     for (int k = 0; k < hiddenBalls[i].Count && k < tube.Count; k++)
                         if (hiddenBalls[i][k] != 0 && tubesBottomFirst[i][k] > 0) tube.Balls[k].ShowHiddenMark();
@@ -339,13 +343,16 @@ namespace BallSortGame.Gameplay
                 // hidden balls (the editor's "?" cells): grey until they become the top ball of their tube
                 for (int k = 0; k < hiddenBottomFirst.Count; k++)
                     if (hiddenBottomFirst[k]) tube.Balls[k].Hide(HiddenBallSprite);
-                // heavy ball: the bottom ball wears the weight and only ever moves into an empty tube
-                if (level.IsHeavyBottom(i) && tube.Count > 0) tube.Balls[0].SetHeavy(true, heavyBallSprite);
+                // heavy balls: they wear the weight and only ever move alone into an empty tube
+                for (int k = 0; k < tube.Count; k++)
+                    if (level.IsHeavyAt(i, k)) tube.Balls[k].SetHeavy(true, heavyBallSprite);
                 tube.RevealTop();
                 if (tube.IsCompleted) tube.RevealAll();
             }
             OpenHiddenTubes(animate: false);   // a tube completed from the start opens its neighbours at once
             ComputeTubePos(animate: false);
+            _seenBoards.Clear();
+            _seenBoards.Add(BuildBoard().ComputeHash());
         }
 
         /// <summary>Sprite shown for a hidden ball (tinted grey with a "?" by <see cref="Ball.Hide"/>).</summary>
@@ -612,19 +619,23 @@ namespace BallSortGame.Gameplay
         }
 
         /// <summary>
-        /// Opens every hidden tube next to a completed tube (index - 1 / + 1, mirrors <see cref="BoardState.OpenHiddenTubes"/>);
-        /// an opened tube that is already completed opens its other neighbour too.
+        /// Opens every hidden tube physically next to a completed tube: left or right in the same row of the layout
+        /// (<see cref="Core.TubeRows"/> with <see cref="MaxTubesPerRow"/>, mirrors <see cref="BoardState.OpenHiddenTubes"/>).
+        /// The last tube of a row and the first of the next are not neighbours. An opened tube that is already completed
+        /// opens its other neighbour too.
         /// </summary>
         void OpenHiddenTubes(bool animate)
         {
             bool changed = true;
+            int n = _tubes.Count;
             while (changed)
             {
                 changed = false;
-                for (int i = 0; i < _tubes.Count; i++)
+                for (int i = 0; i < n; i++)
                 {
                     if (!_tubes[i].IsHiddenTube) continue;
-                    if ((i > 0 && _tubes[i - 1].IsCompleted) || (i + 1 < _tubes.Count && _tubes[i + 1].IsCompleted))
+                    int l = Core.TubeRows.Left(i, n, MaxTubesPerRow), r = Core.TubeRows.Right(i, n, MaxTubesPerRow);
+                    if ((l >= 0 && _tubes[l].IsCompleted) || (r >= 0 && _tubes[r].IsCompleted))
                     {
                         _tubes[i].Open(animate);
                         if (_tubes[i].IsCompleted) _tubes[i].RevealAll();
@@ -688,8 +699,17 @@ namespace BallSortGame.Gameplay
             if (_gameOver) yield break;
 
             // The level fails only when nothing useful is left to do: the player plays every available move first,
-            // even on a board the solver already knows is lost.
-            if (!BuildBoard().HasUsefulMove())
+            // even on a board the solver already knows is lost. Pouring back and forth between positions already
+            // played does not count as a move, so a lost board cannot be kept alive forever.
+            var board = BuildBoard();
+            _seenBoards.Add(board.ComputeHash());
+            bool dead = !board.HasUsefulMove();
+            if (!dead && !board.HasNewMove(_seenBoards))
+            {
+                var verdict = _solver.Solve(board, new SolverBudget { MaxStates = 120_000, MaxMilliseconds = 250 });
+                dead = verdict == SolveVerdict.Unsolvable;
+            }
+            if (dead)
             {
                 yield return new WaitForSeconds(0.4f);
                 if (!_gameOver)
@@ -702,12 +722,12 @@ namespace BallSortGame.Gameplay
 
         public BoardState BuildBoard()
         {
-            var board = new BoardState(_tubes.Count, _capacity);
+            var board = new BoardState(_tubes.Count, _capacity) { MaxTubesPerRow = MaxTubesPerRow };
             for (int i = 0; i < _tubes.Count; i++)
             {
                 board.SetKind(i, _tubes[i].Kind);
                 foreach (var c in _tubes[i].ColorsBottomFirst()) board.Push(i, (byte)c);
-                board.SetHeavy(i, _tubes[i].IsHeavyBottom);
+                board.SetHeavyMask(i, _tubes[i].HeavyMask);
             }
             return board;
         }
@@ -732,6 +752,7 @@ namespace BallSortGame.Gameplay
                 return false;
             }
             ClearSelection();
+            _seenBoards.Clear();   // the taken-back positions may be played again
             var step = _record.Pop();
             _undosUsed++;
             _sumStep = Mathf.Max(0, _sumStep - 1);
@@ -759,6 +780,7 @@ namespace BallSortGame.Gameplay
 
         IEnumerator RewindRoutine(int moves)
         {
+            _seenBoards.Clear();   // the taken-back positions may be played again
             for (int i = 0; i < moves && _record.Count > 0; i++)
             {
                 var step = _record.Pop();

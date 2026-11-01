@@ -36,10 +36,17 @@ namespace BallSortGame.Core
         readonly byte[][] _colors;   // [tube][slot] bottom-first
         readonly byte[] _counts;
         readonly TubeKind[] _kinds;
-        // The bottom ball of the tube is heavy (the cannonball obstacle): a normal coloured ball that only ever sits
-        // at the bottom, so it only moves into an empty tube (alone) and a run moving off the tube stops above it.
-        readonly bool[] _heavy;
+        // Heavy balls (the cannonball obstacle): one bit per slot (bottom-first) of a normal coloured ball that is heavy.
+        // A heavy ball only ever moves alone into an empty tube (so it lands at the bottom), and a run moving off a tube
+        // stops at it. The level maker may put the weight on any ball; the rule only bites when the player moves it.
+        readonly uint[] _heavy;
         public readonly int Capacity;
+
+        /// <summary>
+        /// Tubes per row on the board (GameManager.MaxTubesPerRow); decides which tubes stand side by side, see
+        /// <see cref="TubeRows"/>. A hidden tube opens only from a tube physically next to it.
+        /// </summary>
+        public int MaxTubesPerRow = TubeRows.DefaultMaxPerRow;
 
         public int TubeCount => _counts.Length;
 
@@ -50,39 +57,52 @@ namespace BallSortGame.Core
             Capacity = capacity;
             _counts = new byte[tubeCount];
             _kinds = new TubeKind[tubeCount];
-            _heavy = new bool[tubeCount];
+            _heavy = new uint[tubeCount];
             _colors = new byte[tubeCount][];
             for (int i = 0; i < tubeCount; i++) _colors[i] = new byte[capacity];
         }
 
         public TubeKind KindOf(int tube) => _kinds[tube];
 
-        /// <summary>The bottom ball of the tube is heavy (false for an empty tube).</summary>
-        public bool IsHeavyBottom(int tube) => _heavy[tube] && _counts[tube] > 0;
+        /// <summary>The ball in <paramref name="slot"/> (0 = bottom) is heavy; false for an empty slot.</summary>
+        public bool IsHeavyAt(int tube, int slot) => slot >= 0 && slot < _counts[tube] && ((_heavy[tube] >> slot) & 1u) != 0;
 
-        /// <summary>The tube holds only its heavy ball: the one state in which the heavy ball can move (into an empty tube).</summary>
-        public bool IsHeavyOnly(int tube) => _heavy[tube] && _counts[tube] == 1;
+        /// <summary>The top ball of the tube is heavy: it moves alone, and only into an empty tube.</summary>
+        public bool IsTopHeavy(int tube) => _counts[tube] > 0 && IsHeavyAt(tube, _counts[tube] - 1);
 
-        /// <summary>Marks the bottom ball heavy. Ignored on an empty tube.</summary>
-        public void SetHeavy(int tube, bool heavy) => _heavy[tube] = heavy && _counts[tube] > 0;
+        /// <summary>Heavy balls of the tube as a bit mask, bit s = slot s (bottom-first). The level JSON form.</summary>
+        public int HeavyMask(int tube) => (int)_heavy[tube];
 
-        /// <summary>Applies per-tube heavy flags (null or short = not heavy for the rest).</summary>
+        /// <summary>Marks one ball heavy (or normal again). Ignored for an empty slot.</summary>
+        public void SetHeavy(int tube, int slot, bool heavy)
+        {
+            if (slot < 0 || slot >= _counts[tube]) return;
+            if (heavy) _heavy[tube] |= 1u << slot;
+            else _heavy[tube] &= ~(1u << slot);
+        }
+
+        /// <summary>Sets the tube's heavy balls from a bit mask (bit s = slot s, bottom-first); bits above the balls are dropped.</summary>
+        public void SetHeavyMask(int tube, int mask) => _heavy[tube] = mask <= 0 ? 0u : (uint)mask & BallMask(tube);
+
+        uint BallMask(int tube) => _counts[tube] >= 32 ? uint.MaxValue : (1u << _counts[tube]) - 1u;
+
+        /// <summary>Applies per-tube heavy masks (null or short = no heavy ball in the rest). 1 = the bottom ball, the old form.</summary>
         public void SetHeavies(IList<int> heavy)
         {
-            for (int i = 0; i < TubeCount; i++) SetHeavy(i, heavy != null && i < heavy.Count && heavy[i] != 0);
+            for (int i = 0; i < TubeCount; i++) SetHeavyMask(i, heavy != null && i < heavy.Count ? heavy[i] : 0);
         }
 
         public bool HasHeavyBalls
         {
-            get { for (int t = 0; t < TubeCount; t++) if (IsHeavyBottom(t)) return true; return false; }
+            get { for (int t = 0; t < TubeCount; t++) if (_heavy[t] != 0) return true; return false; }
         }
 
-        /// <summary>Heavy flags as 0/1 per tube, or null when no ball is heavy (the compact form for level JSON).</summary>
+        /// <summary>Heavy masks per tube (bit s = slot s, bottom-first), or null when no ball is heavy (the compact form for level JSON).</summary>
         public List<int> HeavyOrNull()
         {
             if (!HasHeavyBalls) return null;
             var l = new List<int>(TubeCount);
-            for (int t = 0; t < TubeCount; t++) l.Add(IsHeavyBottom(t) ? 1 : 0);
+            for (int t = 0; t < TubeCount; t++) l.Add(HeavyMask(t));
             return l;
         }
 
@@ -113,9 +133,24 @@ namespace BallSortGame.Core
         /// <summary>Empty and Normal: only such tubes are interchangeable for the solvers.</summary>
         public bool IsPlainEmpty(int tube) => _counts[tube] == 0 && _kinds[tube] == TubeKind.Normal;
 
+        /// <summary>True when a tube physically next to <paramref name="tube"/> (left or right, same row) is hidden.</summary>
+        public bool HasHiddenNeighbour(int tube)
+        {
+            int l = TubeRows.Left(tube, TubeCount, MaxTubesPerRow), r = TubeRows.Right(tube, TubeCount, MaxTubesPerRow);
+            return (l >= 0 && _kinds[l] == TubeKind.Hidden) || (r >= 0 && _kinds[r] == TubeKind.Hidden);
+        }
+
+        /// <summary>True when a tube physically next to <paramref name="tube"/> (left or right, same row) is completed.</summary>
+        public bool HasCompletedNeighbour(int tube)
+        {
+            int l = TubeRows.Left(tube, TubeCount, MaxTubesPerRow), r = TubeRows.Right(tube, TubeCount, MaxTubesPerRow);
+            return (l >= 0 && IsCompleted(l)) || (r >= 0 && IsCompleted(r));
+        }
+
         /// <summary>
-        /// Opens every <see cref="TubeKind.Hidden"/> tube next to a completed tube (it becomes Normal). Chains: an opened
-        /// tube that is already completed opens its other neighbour too. Returns true when a tube opened.
+        /// Opens every <see cref="TubeKind.Hidden"/> tube physically next to a completed tube (left or right in the same
+        /// row, see <see cref="TubeRows"/>; it becomes Normal). Chains: an opened tube that is already completed opens its
+        /// other neighbour too. Returns true when a tube opened.
         /// </summary>
         public bool OpenHiddenTubes()
         {
@@ -126,7 +161,7 @@ namespace BallSortGame.Core
                 for (int i = 0; i < TubeCount; i++)
                 {
                     if (_kinds[i] != TubeKind.Hidden) continue;
-                    if ((i > 0 && IsCompleted(i - 1)) || (i + 1 < TubeCount && IsCompleted(i + 1)))
+                    if (HasCompletedNeighbour(i))
                     {
                         _kinds[i] = TubeKind.Normal;
                         any = changed = true;
@@ -166,7 +201,7 @@ namespace BallSortGame.Core
 
         public BoardState Clone()
         {
-            var b = new BoardState(TubeCount, Capacity);
+            var b = new BoardState(TubeCount, Capacity) { MaxTubesPerRow = MaxTubesPerRow };
             for (int i = 0; i < TubeCount; i++)
             {
                 b._counts[i] = _counts[i];
@@ -188,17 +223,17 @@ namespace BallSortGame.Core
         public int TopColor(int tube) => _counts[tube] == 0 ? 0 : _colors[tube][_counts[tube] - 1];
 
         /// <summary>
-        /// Length of the same-colored run at the top of the tube. A heavy bottom ball is not part of the run above it
-        /// (it never leaves with the run); alone, it is a run of one.
+        /// Length of the same-colored run at the top of the tube. A heavy ball on top is a run of one (it moves alone);
+        /// a heavy ball under the run ends it (it never leaves with the balls above it).
         /// </summary>
         public int TopRun(int tube)
         {
             int n = _counts[tube];
             if (n == 0) return 0;
+            if (IsHeavyAt(tube, n - 1)) return 1;
             byte top = _colors[tube][n - 1];
             int run = 1;
-            int floor = _heavy[tube] ? 1 : 0;
-            for (int i = n - 2; i >= floor && _colors[tube][i] == top; i--) run++;
+            for (int i = n - 2; i >= 0 && _colors[tube][i] == top && !IsHeavyAt(tube, i); i--) run++;
             return run;
         }
 
@@ -245,15 +280,15 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
-        /// Reference rule BoardState.CanImport(from, to). A heavy ball (the bottom ball of its tube, moving only when
-        /// it is alone) goes into an empty tube only, so it always stays at the bottom.
+        /// Reference rule BoardState.CanImport(from, to). A heavy ball on top of its tube goes into an empty tube only,
+        /// so once moved it sits at the bottom.
         /// </summary>
         public bool CanImport(int from, int to, bool allowSelectFullTube = false)
         {
             if (from == to) return false;
             if (!CanExport(from, allowSelectFullTube)) return false;
             if (_kinds[to] == TubeKind.OutOnly || _kinds[to] == TubeKind.Hidden) return false;
-            if (IsHeavyOnly(from)) return _counts[to] == 0;
+            if (IsTopHeavy(from)) return _counts[to] == 0;
             if (_counts[to] == 0) return true;
             if (_counts[to] >= CapacityOf(to)) return false;
             return TopColor(to) == TopColor(from);
@@ -264,15 +299,15 @@ namespace BallSortGame.Core
 
         public void ApplyMove(int from, int to, int n)
         {
-            bool heavyMoves = IsHeavyOnly(from) && n == 1;
             for (int i = 0; i < n; i++)
             {
+                bool heavy = IsHeavyAt(from, _counts[from] - 1);   // the weight travels with its ball
                 byte c = Pop(from);
                 Push(to, c);
+                if (heavy) _heavy[to] |= 1u << (_counts[to] - 1);
             }
-            if (heavyMoves) { _heavy[from] = false; _heavy[to] = true; }
-            // a completed tube opens the hidden tubes next to it
-            if (IsCompleted(to) && ((to > 0 && _kinds[to - 1] == TubeKind.Hidden) || (to + 1 < TubeCount && _kinds[to + 1] == TubeKind.Hidden)))
+            // a completed tube opens the hidden tubes physically next to it
+            if (IsCompleted(to) && HasHiddenNeighbour(to))
                 OpenHiddenTubes();
         }
 
@@ -287,14 +322,14 @@ namespace BallSortGame.Core
             if (_counts[tube] == 0) throw new InvalidOperationException("tube empty");
             byte c = _colors[tube][--_counts[tube]];
             _colors[tube][_counts[tube]] = 0;
-            if (_counts[tube] == 0) _heavy[tube] = false;   // the heavy ball left: the flag follows it in ApplyMove
+            _heavy[tube] &= ~(1u << _counts[tube]);   // the weight leaves with its ball (ApplyMove puts it on again)
             return c;
         }
 
         /// <summary>Appends an empty tube (reference AddTube).</summary>
         public BoardState WithExtraTube()
         {
-            var b = new BoardState(TubeCount + 1, Capacity);
+            var b = new BoardState(TubeCount + 1, Capacity) { MaxTubesPerRow = MaxTubesPerRow };
             for (int i = 0; i < TubeCount; i++)
             {
                 b._counts[i] = _counts[i];
@@ -329,13 +364,37 @@ namespace BallSortGame.Core
                 if (!CanExport(f)) continue;
                 bool uniform = IsUniform(f);
                 for (int t = 0; t < TubeCount; t++)
+                    if (IsUsefulMove(f, t, uniform)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Any useful move (<see cref="HasUsefulMove"/>) that reaches a board not in <paramref name="seen"/> (hashes of
+        /// the boards played so far, <see cref="ComputeHash"/>). False when every move left only pours balls back and
+        /// forth between positions the player has already been in.
+        /// </summary>
+        public bool HasNewMove(HashSet<ulong> seen)
+        {
+            for (int f = 0; f < TubeCount; f++)
+            {
+                if (!CanExport(f)) continue;
+                bool uniform = IsUniform(f);
+                for (int t = 0; t < TubeCount; t++)
                 {
-                    if (!CanImport(f, t)) continue;
-                    if (uniform && _counts[t] == 0 && CapacityOf(t) >= CapacityOf(f)) continue;   // pointless relocation
-                    return true;
+                    if (!IsUsefulMove(f, t, uniform)) continue;
+                    var next = Clone();
+                    next.ApplyMove(f, t, CountTopSameMovable(f, t));
+                    if (!seen.Contains(next.ComputeHash())) return true;
                 }
             }
             return false;
+        }
+
+        bool IsUsefulMove(int from, int to, bool fromUniform)
+        {
+            if (!CanImport(from, to)) return false;
+            return !(fromUniform && _counts[to] == 0 && CapacityOf(to) >= CapacityOf(from));   // pointless relocation
         }
 
         /// <summary>
@@ -348,7 +407,7 @@ namespace BallSortGame.Core
             for (int i = 0; i < TubeCount; i++)
             {
                 ulong k = 1469598103934665603UL ^ ((ulong)_kinds[i] << 56);   // kind is part of the tube identity
-                if (IsHeavyBottom(i)) k ^= 1UL << 55;                            // and so is a heavy bottom ball
+                k ^= (ulong)_heavy[i] << 40;                                      // and so are its heavy balls
                 for (int s = 0; s < Capacity; s++)
                 {
                     k ^= _colors[i][s];
@@ -386,7 +445,7 @@ namespace BallSortGame.Core
                 {
                     if (s > 0) sb.Append(',');
                     sb.Append(_colors[i][s]);
-                    if (s == 0 && IsHeavyBottom(i)) sb.Append('H');
+                    if (IsHeavyAt(i, s)) sb.Append('H');
                 }
                 sb.Append("] ");
             }

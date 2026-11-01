@@ -40,7 +40,7 @@ namespace BallSortGame.Core
 
     /// <summary>
     /// Pack sanity checks for the level bot and the editor tools: malformed fills (ball counts, gaps, sizes, one-way
-    /// tube rules, heavy flags on empty tubes), unsolvable fills (with a note when only the Add Tube booster saves them), fills the solver cannot
+    /// tube rules, heavy marks on missing balls), unsolvable fills (with a note when only the Add Tube booster saves them), fills the solver cannot
     /// decide, stored "steps" hints that do not solve the level, and duplicate puzzle ids. No Unity types: safe to
     /// run on a worker thread.
     /// </summary>
@@ -88,7 +88,8 @@ namespace BallSortGame.Core
                 {
                     int k = lv.TubeKinds[i];
                     if (k < 0 || k > 4 || k == (int)TubeKind.Spare) return $"tube {i + 1} has an unknown kind {k}";
-                    if (k == (int)TubeKind.Hidden && lv.Tubes.Count == 1) return $"tube {i + 1} is hidden but has no neighbour to open it";
+                    if (k == (int)TubeKind.Hidden && TubeRows.Left(i, lv.Tubes.Count) < 0 && TubeRows.Right(i, lv.Tubes.Count) < 0)
+                        return $"tube {i + 1} is hidden but has no tube next to it in its row to open it";
                     int count = Filled(lv.Tubes[i]);
                     if (k == (int)TubeKind.InOnly && count > 0) return $"tube {i + 1} is in-only but starts with balls";
                     if (k == (int)TubeKind.OutOnly && count == 0) return $"tube {i + 1} is out-only but starts empty";
@@ -98,7 +99,7 @@ namespace BallSortGame.Core
             {
                 if (lv.Heavy.Count != lv.Tubes.Count) return $"heavy lists {lv.Heavy.Count} tubes, the level has {lv.Tubes.Count}";
                 for (int i = 0; i < lv.Heavy.Count; i++)
-                    if (lv.Heavy[i] != 0 && Filled(lv.Tubes[i]) == 0) return $"tube {i + 1} is marked heavy but has no ball";
+                    if (lv.Heavy[i] < 0 || (lv.Heavy[i] >> Filled(lv.Tubes[i])) != 0) return $"tube {i + 1} marks a heavy ball where it has no ball";
             }
             if (balls == lv.Tubes.Count * cap) return "every tube is full: no move is possible";
             var board = lv.ToBoard();

@@ -29,8 +29,8 @@ namespace BallSortGame.LevelEditor
     /// drawn with a "?" on it. The IN and OUT palette tools make a tube one-way
     /// (tap again to make it normal): in-only tubes start empty, out-only tubes start filled. The HIDE tool covers a tube
     /// until a neighbouring tube is completed (tap again to uncover it). The HEAVY tool puts the
-    /// cannonball weight on a tube's bottom ball (tap again to take it off): it keeps its colour but only ever moves
-    /// into an empty tube. Test plays it, Check
+    /// cannonball weight on any ball (tap again to take it off): it keeps its colour, but the player can only move it
+    /// alone into an empty tube, where it sinks to the bottom. Test plays it, Check
     /// fills the "?" cells and rates the result, Save generates rated seeds of the wanted difficulty and writes them into the pack the game plays,
     /// replacing the slot the layout came from (or appending a new level). The LEVEL row's number box + GO jumps to a
     /// pack slot by its unique level number (the number it shows before the pack loops); a number past the end starts
@@ -41,7 +41,7 @@ namespace BallSortGame.LevelEditor
         const int Eraser = 0;
         const int InOnlyTool = -2;      // palette tools that set the tube kind instead of painting
         const int OutOnlyTool = -3;
-        const int HeavyTool = -4;       // toggles the weight on a tube's bottom ball
+        const int HeavyTool = -4;       // toggles the weight on the tapped ball
         const int HiddenTool = -5;      // covers a tube until a neighbouring tube is completed
         const int MaxPaletteColors = 14;
         const int UndoDepth = 100;
@@ -453,10 +453,10 @@ namespace BallSortGame.LevelEditor
             }
             if (_selected == HeavyTool)
             {
-                // heavy tool: the weight goes on (or off) the tube's bottom ball, whatever its colour
-                if (count == 0) { Status("Heavy: tap a ball. The bottom ball of its tube gets the weight (tap again to take it off).", EditorUI.Bad); return; }
-                if (slot > 0 && slot < count) { Status("Only the bottom ball of a tube can be heavy: tap the bottom ball.", EditorUI.Bad); return; }
-                Edit(() => _level.SetHeavy(index, !_level.IsHeavy(index)));
+                // heavy tool: the weight goes on (or off) the tapped ball, whatever its colour or place in the tube
+                if (count == 0) { Status("Heavy: tap a ball to put the weight on it (tap again to take it off).", EditorUI.Bad); return; }
+                int ball = Mathf.Min(slot, count - 1);   // the glass above the stack means the top ball
+                Edit(() => _level.SetHeavy(index, ball, !_level.IsHeavy(index, ball)));
                 return;
             }
             if (_level.KindOf(index) == TubeKind.InOnly && _selected != Eraser)

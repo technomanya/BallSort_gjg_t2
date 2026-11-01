@@ -35,7 +35,7 @@ more fills (bucket 5 is ~1 in 20 random fills of an 8-colour board).
 4. Point `GameManager.levelPackResource` at `data/<name>`.
 
 Hidden tubes in generated packs: set *Hidden tubes per level* (0-4), *Hidden tubes from level* and *every N levels*.
-`LevelDesign.HideTubes(count, seed)` covers that many filled tubes at random, never two side by side. Hidden tubes make
+`LevelDesign.HideTubes(count, seed)` covers that many filled tubes at random, never two side by side in the same row. Hidden tubes make
 boards much harder (most fills come out unsolvable or high-bucket), so when no fill reaches the target the level is
 generated again with one hidden tube fewer; the log shows `/<n>h` and `(wanted <m>h)` when it had to drop some.
 Scriptable via `PackSettings.HiddenTubes / HiddenFromLevel / HiddenEvery`.
@@ -81,7 +81,7 @@ the playout bot and the game's `CanImport` all respect it. The win rule is uncha
 
 **Hidden tubes.** The palette's *HIDE* tool (the cover `Art/Tubes/Hidden tube.png`, `GameManager.hiddenTubeSprite`) covers a
 tube; tapping it again uncovers it. A hidden tube keeps its balls (or starts empty) but nothing goes in or out and its balls cannot
-be seen until a **neighbouring tube** (index − 1 or + 1, so across a row break too) is **completed**: then the cover fades and the
+be seen until a **tube physically next to it** (left or right in the same row; the last tube of a row and the first of the next are *not* neighbours, see `TubeRows`) is **completed**: then the cover fades and the
 tube plays as a normal tube for good (undo does not close it again). A covered tube is never a finished tube, so a hidden tube
 with balls must be opened before the level is won; an opened tube that is already complete opens its other neighbour in turn.
 The editor preview draws the cover see-through so the balls under it can be painted. Levels store it as kind 4 in `tube_kinds`;
@@ -96,13 +96,15 @@ only the visible run moves. The level JSON carries the positions in the optional
 the live board when a hidden ball cut a solver move.
 
 **Heavy balls.** The palette's *HEAVY* tool (the cannonball weight `Art/Balls/NewBalls/Cannonball.png`, drawn over the ball by
-`GameManager.heavyBallSprite`) puts the weight on a tube's **bottom ball**, whatever its colour (tap the bottom ball or the glass
-of a tube with balls; tap again to take it off). A heavy ball is a normal coloured ball for every rule but one: it only ever sits
-at the bottom, so it can only be moved into an **empty** tube, and only once it is alone (a run of its colour moving off the
-tube stops above it). Balls of its colour stack on it as usual and a tube completed on a heavy ball is a finished tube. Levels
-store it as the optional per-tube `heavy` array (1 = that tube's bottom ball is heavy); `EditorLevel.HeavyFlags` / `SetHeavy`,
-`TubeSpec.Heavy`, `BoardState.IsHeavyBottom` / `CanImport` / `TopRun`, `Ball.SetHeavy`, `Tube.CanImport` / `TopBallSameCount`,
-the audit and the solvers all carry the rule (the flag travels with the ball when it moves).
+`GameManager.heavyBallSprite`) puts the weight on **any ball**, whatever its colour or place in the tube (tap the ball, or the
+glass above the stack for the top ball; tap again to take it off). The weight only matters to the player: a heavy ball is a
+normal coloured ball for every rule but the move rule - it moves **alone** and only into an **empty** tube, so once moved it
+sits at the bottom, and a run of balls above a heavy ball moves without it (the run stops at the weight). Balls of its colour
+stack on it as usual and a tube completed with a heavy ball in it is a finished tube. Levels store it as the optional per-tube
+`heavy` array of **bit masks**, bit *s* = the *s*-th ball from the bottom is heavy (so `1` = the bottom ball, the old form);
+`EditorLevel.HeavyFlags` / `SetHeavy(tube, slot, on)`, `TubeSpec.HeavyMask`, `BoardState.IsHeavyAt` / `IsTopHeavy` /
+`CanImport` / `TopRun`, `Ball.SetHeavy`, `Tube.CanImport` / `TopBallSameCount`, the audit and the solvers all carry the rule
+(the bit travels with the ball when it moves).
 
 **Actions.** *TEST* plays the generated seeds (retry = next seed) or one random fill of the hidden balls, with a
 `< EDITOR` button to return.
