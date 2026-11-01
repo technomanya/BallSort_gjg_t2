@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using BallSortGame.Core;
 using BallSortGame.Gameplay;
+using BallSortGame.UI;
 using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -13,76 +14,91 @@ using UnityEngine.UI;
 
 namespace BallSortGame.LevelEditor
 {
-    public enum EditorTool { Paint, Fill, Swap, Delete }
-
     /// <summary>
-    /// In-app level editor, the ball-sort counterpart of Magic Sort's Modules.LevelEditor.WaterSort (EditorManager,
-    /// EditorInputSystem, DrawBottle/DrawPreset buttons, ColorPalette, Test/Save/Load buttons). It ships inside the
-    /// normal game build: it attaches itself to any scene with a <see cref="GameMgr"/> when <see cref="IsAllowed"/>
-    /// (Unity Editor, development builds, or the PlayerPrefs switch), and designers open it with F2 or five quick taps
-    /// on the level pill. Players of a release build never see it.
+    /// In-app level editor (the ball-sort counterpart of Magic Sort's Modules.LevelEditor.WaterSort). It ships inside
+    /// the normal game build: it attaches itself to any scene with a <see cref="GameManager"/> when <see cref="IsAllowed"/>
+    /// (Unity Editor or a development build), and designers open it with F2 or a tap on the level pill. A release build
+    /// never attaches it, so players never see it.
     ///
-    /// Flow: draw tubes (fixed colours, "?" luck slots, empty) -> Test plays a random fill in the real game ->
-    /// Generate makes rated seeds with <see cref="LevelGenerator"/> (the local stand-in for Magic Sort's
-    /// SolveLevelRequest backend) -> To Pack writes them into Resources/data/editor_pack.json.
+    /// The layout is shown on the real board (<see cref="GameManager.Preview"/>: the game's tubes, balls and background,
+    /// grey "?" balls for luck slots) with the editor controls over it in the game's UI skin, the way the main menu
+    /// sits over the board. Tap a ball to recolour it with the palette colour, tap the empty glass to fill the rest of
+    /// the tube; TUBES / HEIGHT / COLOURS steppers size the level (a new tube comes as a full "?" tube of a new colour;
+    /// erase it for a spare tube). The IN and OUT palette tools make a tube one-way
+    /// (tap again to make it normal): in-only tubes start empty, out-only tubes start filled. The HIDE tool covers a tube
+    /// until a neighbouring tube is completed (tap again to uncover it). The HEAVY tool puts the
+    /// cannonball weight on a tube's bottom ball (tap again to take it off): it keeps its colour but only ever moves
+    /// into an empty tube. Test plays it, Check
+    /// rates one fill, Save generates rated seeds of the wanted difficulty and writes them into the pack the game plays,
+    /// replacing the slot the layout came from (or appending a new level). The LEVEL row's number box + GO jumps to a
+    /// pack slot by its unique level number (the number it shows before the pack loops); a number past the end starts
+    /// a new level that is appended on save.
     /// </summary>
-    public class LevelEditorManager : MonoBehaviour
+    public partial class LevelEditorManager : MonoBehaviour
     {
-        /// <summary>PlayerPrefs int; 1 unlocks the editor in release builds (set it from a debug menu or adb).</summary>
-        public const string AccessKey = "ballsort.level_editor";
         const int Eraser = 0;
+        const int InOnlyTool = -2;      // palette tools that set the tube kind instead of painting
+        const int OutOnlyTool = -3;
+        const int HeavyTool = -4;       // toggles the weight on a tube's bottom ball
+        const int HiddenTool = -5;      // covers a tube until a neighbouring tube is completed
         const int MaxPaletteColors = 14;
         const int UndoDepth = 100;
+        const int SeedsPerLevel = 5;          // Magic Sort generates five fills per level
+        const float FreeScreenFraction = 0.235f;  // screen height kept clear of tubes at the top and the bottom for the controls
 
-        public static bool IsAllowed => Application.isEditor || Debug.isDebugBuild || PlayerPrefs.GetInt(AccessKey, 0) == 1;
+        /// <summary>Unity Editor or a development build (Build Profiles > Development Build). Never a release build.</summary>
+        public static bool IsAllowed => Application.isEditor || Debug.isDebugBuild;
         public static string SaveDir => Path.Combine(Application.persistentDataPath, "LevelEditor");
-        /// <summary>In the Unity Editor the pack goes into Resources so GameMgr can load it as "data/editor_pack".</summary>
-        public static string PackPath => Application.isEditor
-            ? Path.Combine(Application.dataPath, "Game/Resources/data/editor_pack.json")
-            : Path.Combine(SaveDir, "editor_pack.json");
+        /// <summary>
+        /// The pack the game plays (<see cref="GameManager.levelPackResource"/>): in the Unity Editor its JSON under
+        /// Resources, so the saved levels are what the game loads next time; on a device a copy under persistentDataPath.
+        /// </summary>
+        public string PackPath
+        {
+            get
+            {
+                string res = string.IsNullOrEmpty(game?.levelPackResource) ? "data/editor_pack" : game.levelPackResource;
+                return Application.isEditor
+                    ? Path.Combine(Application.dataPath, "Game/Resources", res + ".json")
+                    : Path.Combine(SaveDir, Path.GetFileName(res) + ".json");
+            }
+        }
 
-        public GameMgr game;
+        public GameManager game;
         public bool IsOpen => _open;
         public bool IsTesting => _testing;
 
         EditorLevel _level;
         int _selected = 1;              // palette value: colour > 0, EditorLevel.Random, or Eraser
-        EditorTool _tool = EditorTool.Paint;
-        int _swapFrom = -1;
-        int _packLevel = 1;
+        int _difficulty = 3;            // wanted bucket 1..7 for Save
         bool _open, _testing;
         readonly List<string> _undo = new List<string>();
         readonly List<string> _redo = new List<string>();
-
-        // secret entry
-        int _taps;
-        float _lastTap;
 
         // background job (solver / generator run off the main thread)
         Task _job;
         Action _jobDone;
         bool _generating;
         volatile int _progFills, _progSeeds;
-        int _genBucket = 2, _genCount = 5;
 
         // UI
         Canvas _canvas;
         CanvasScaler _scaler;
-        GameObject _panel, _testBar, _modal;
-        RectTransform _board, _modalWindow, _genList;
-        Vector2 _boardSize;
-        Text _info, _capText, _colorsText, _packText, _genStatus;
-        InputField _nameField;
-        Button _undoButton, _redoButton;
-        readonly Dictionary<EditorTool, Image> _toolImages = new Dictionary<EditorTool, Image>();
+        GameObject _panel, _testBar;
+        Text _status, _tubesText, _capText, _colorsText, _diffText, _slotText;
+        Button _undoButton;
+        InputField _goField;
+        float _typingUntil;             // keyboard shortcuts stay off for a moment after the GO box had the focus
         readonly List<Swatch> _swatches = new List<Swatch>();
+        Canvas _hudCanvas;
+        GraphicRaycaster _hudRaycaster;
 
         struct Swatch
         {
             public int Value;
-            public Image Bg, Icon;
+            public GameObject Root;
+            public Image Frame;
             public Text Usage;
-            public Color IconColor;
         }
 
         // =====================================================================
@@ -102,7 +118,7 @@ namespace BallSortGame.LevelEditor
         static void Attach()
         {
             if (!IsAllowed || FindFirstObjectByType<LevelEditorManager>() != null) return;
-            var game = FindFirstObjectByType<GameMgr>();
+            var game = FindFirstObjectByType<GameManager>();
             if (game == null) return;
             new GameObject("LevelEditor").AddComponent<LevelEditorManager>().game = game;
         }
@@ -113,6 +129,11 @@ namespace BallSortGame.LevelEditor
             // keep the canvas at least 1080x2340 units in portrait and landscape windows
             if (_scaler != null) _scaler.matchWidthOrHeight = Screen.width * 2340f > Screen.height * 1080f ? 1f : 0f;
 
+            if (_botting)
+            {
+                UpdateBot();
+                return;
+            }
             if (_testing)
             {
                 if (Input.GetKeyDown(KeyCode.F2) || Input.GetKeyDown(KeyCode.Escape)) BackToEditor();
@@ -120,51 +141,32 @@ namespace BallSortGame.LevelEditor
             }
             if (_open)
             {
-                if (Input.GetKeyDown(KeyCode.Escape))
-                {
-                    if (_modal.activeSelf) CloseModal();
-                    else Close();
-                }
-                else if (Input.GetKeyDown(KeyCode.F2)) Close();
-                else if (!IsTyping() && (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)))
+                if (_goField != null && _goField.isFocused) _typingUntil = Time.unscaledTime + 0.2f;
+                if (Time.unscaledTime < _typingUntil) return;
+                if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.F2)) Close();
+                else if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
                 {
                     if (Input.GetKeyDown(KeyCode.Z)) Undo();
                     else if (Input.GetKeyDown(KeyCode.Y)) Redo();
                 }
+                else if (PointerInput.Down) TapBoard();
                 return;
             }
             if (Input.GetKeyDown(KeyCode.F2)) { Open(); return; }
             DetectSecretTaps();
         }
 
-        void LateUpdate()
-        {
-            if (_open && _board != null && _board.rect.size != _boardSize) RebuildBoard();
-        }
-
-        /// <summary>Five quick taps on the level pill (top centre of the screen) open the editor.</summary>
+        /// <summary>A tap on the level pill (top centre of the screen) opens the editor.</summary>
         void DetectSecretTaps()
         {
-            if (!Input.GetMouseButtonDown(0)) return;
-            Vector2 p = Input.mousePosition;
-            if (p.y < Screen.height * 0.88f || Mathf.Abs(p.x - Screen.width * 0.5f) > Screen.width * 0.2f) { _taps = 0; return; }
-            if (Time.unscaledTime - _lastTap > 0.6f) _taps = 0;
-            _lastTap = Time.unscaledTime;
-            if (++_taps >= 5)
-            {
-                _taps = 0;
-                Open();
-            }
-        }
-
-        static bool IsTyping()
-        {
-            var sel = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
-            return sel != null && sel.TryGetComponent(out InputField f) && f.isFocused;
+            if (!PointerInput.Down) return;
+            Vector2 p = PointerInput.Position;
+            if (p.y < Screen.height * 0.88f || Mathf.Abs(p.x - Screen.width * 0.5f) > Screen.width * 0.2f) return;
+            Open();
         }
 
         // =====================================================================
-        // Open / close / test (Magic Sort GamePlaySceneToEditorSceneCommand / TestButton / ReturnToEditorSceneButton)
+        // Open / close / test
         // =====================================================================
 
         public void Open()
@@ -174,29 +176,118 @@ namespace BallSortGame.LevelEditor
             if (_level == null) _level = StartingLayout();
             _open = true;
             _testing = false;
-            game.IsPaused = true;
+            ShowHud(false);
             _panel.SetActive(true);
             _testBar.SetActive(false);
-            if (game.Stage != null) _packLevel = Mathf.Clamp(game.CurrentLevel, 1, game.Stage.Levels.Count);
             Canvas.ForceUpdateCanvases();   // a freshly built canvas has no size until it is laid out once
+            RefreshPackLabel();
             Refresh();
         }
 
         public void Close()
         {
+            if (_botting) StopBot(false);
             _open = _testing = false;
-            CloseModal();
             _panel.SetActive(false);
             _testBar.SetActive(false);
-            if (game.OverrideLevel != null) game.SetOverrideLevel(null);   // back to the pack level that was being played
-            game.IsPaused = false;
+            game.MinCameraSize = 0f;
+            bool moved = _level != null && InPack(_level.Slot) && SlotOf(game.CurrentLevel) != _level.Slot;
+            bool overridden = game.OverrideLevel != null;
+            if (overridden) game.SetOverrideLevel(null);   // back to the pack level that was being played
+            if (moved) game.StartLevel(_level.Slot);       // GO went to another level: the game follows
+            else if (!overridden) game.Restart();          // the preview replaced the board
+            ShowHud(true);
+            game.IsPaused = MainMenuView.IsOpen;
         }
 
         EditorLevel StartingLayout()
         {
             var cur = game.CurrentLevelData;
-            if (cur != null && cur.Tubes.Count > 0) return EditorLevel.FromLevelData(cur, $"lv{Mathf.Max(1, game.CurrentLevel)}_edit");
+            int slot = game.OverrideLevel == null ? SlotOf(game.CurrentLevel) : 0;
+            if (cur != null && cur.Tubes.Count > 0)
+            {
+                var lv = EditorLevel.FromLevelData(cur, slot > 0 ? $"lv{slot}" : NewName());
+                lv.Slot = slot;
+                return lv;
+            }
             return EditorLevel.Standard(NewName(), 4, 2, 4);
+        }
+
+        // =====================================================================
+        // Pack slots: the unique level number of a pack entry is its 1-based index (what it shows before the pack loops)
+        // =====================================================================
+
+        int PackCount => game.Stage?.Levels.Count ?? 0;
+
+        bool InPack(int slot) => slot >= 1 && slot <= PackCount;
+
+        /// <summary>The pack slot a level number plays (level 106 of a 100-level pack is slot 6); 0 without a pack.</summary>
+        int SlotOf(int level)
+        {
+            int n = PackCount;
+            return n == 0 ? 0 : ((level - 1) % n + n) % n + 1;
+        }
+
+        /// <summary>GO: the number typed in the LEVEL row.</summary>
+        void Go()
+        {
+            string s = _goField != null ? _goField.text.Trim() : "";
+            if (!int.TryParse(s, out int n) || n < 1) { Status("Type a level number (1 or more) and press GO.", EditorUI.Bad); return; }
+            if (GoToLevel(n) && _goField != null) _goField.text = "";
+            if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        }
+
+        /// <summary>
+        /// Loads pack slot <paramref name="n"/> into the editor (Save then replaces it). A number past the end of the pack
+        /// starts a new level with the current sizes, appended as the next slot on save.
+        /// </summary>
+        bool GoToLevel(int n)
+        {
+            if (_job != null) { Status("Still working on the last job...", EditorUI.Bad); return false; }
+            int count = PackCount;
+            if (n <= count)
+            {
+                EditorLevel lv;
+                try { lv = EditorLevel.FromLevelData(game.Stage.Levels[n - 1], $"lv{n}"); }
+                catch (Exception e) { Status($"Cannot load level {n} into the editor: {e.Message}", EditorUI.Bad); return false; }
+                lv.Slot = n;
+                Replace(lv);
+                Status($"Level {n} of {count} loaded. Save replaces it in the pack.", EditorUI.Good);
+                return true;
+            }
+            int slot = count + 1;
+            int colors = Mathf.Clamp(_level != null ? _level.ColorCount : 4, 1, PaletteSize);
+            int empties = _level != null ? Mathf.Max(2, _level.TubeCount - _level.ColorCount) : 2;
+            var fresh = EditorLevel.Standard($"lv{slot}", colors, empties, _level != null ? _level.Capacity : 4);
+            fresh.Slot = slot;
+            Replace(fresh);
+            Status(n == slot
+                ? $"There is no level {n} yet: new level, saved as level {slot} of the pack."
+                : $"The pack has {count} levels, so there is no level {n}: new level, saved as level {slot}.", Color.white);
+            return true;
+        }
+
+        void RefreshSlotLabel()
+        {
+            if (_slotText == null || _level == null) return;
+            int count = PackCount;
+            _slotText.text = InPack(_level.Slot) ? $"LEVEL {_level.Slot} / {count}"
+                : count > 0 ? $"NEW LEVEL {count + 1}"
+                : "NO PACK LOADED";
+        }
+
+        /// <summary>Hides the game HUD while editing; its state (menu, popups) is kept.</summary>
+        void ShowHud(bool on)
+        {
+            if (_hudCanvas == null)
+            {
+                var hud = FindFirstObjectByType<GameHUD>(FindObjectsInactive.Include);
+                if (hud == null) return;
+                _hudCanvas = hud.GetComponent<Canvas>();
+                _hudRaycaster = hud.GetComponent<GraphicRaycaster>();
+            }
+            if (_hudCanvas != null) _hudCanvas.enabled = on;
+            if (_hudRaycaster != null) _hudRaycaster.enabled = on;
         }
 
         /// <summary>Plays the generated seeds when there are any, otherwise one random fill of the layout.</summary>
@@ -205,35 +296,34 @@ namespace BallSortGame.LevelEditor
             var data = _level.Seeds;
             if (data == null)
             {
-                if (!_level.Validate(out var error)) { Info(error, EditorUI.Bad); return; }
+                if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
                 int seed = UnityEngine.Random.Range(1, int.MaxValue);
                 var board = _level.Fill(seed, out error);
-                if (board == null) { Info(error, EditorUI.Bad); return; }
-                data = new LevelData { PuzzleId = $"{_level.Name}_seed{seed}", Tubes = LevelFiller.ToTopFirst(board) };
+                if (board == null) { Status(error, EditorUI.Bad); return; }
+                data = new LevelData { PuzzleId = $"{_level.Name}_seed{seed}", Tubes = LevelFiller.ToTopFirst(board), TubeKinds = board.KindsOrNull(), Heavy = board.HeavyOrNull(), Hidden = _level.HiddenTopFirst() };
             }
-            PlayTest(data);
-        }
-
-        void PlayTest(LevelData data)
-        {
-            CloseModal();
             _testing = true;
             _panel.SetActive(false);
             _testBar.SetActive(true);
+            game.MinCameraSize = 0f;
+            ShowHud(true);
             game.SetOverrideLevel(data);
+            // the editor may have been opened from the main menu; the test is played, not menued
+            var menu = FindFirstObjectByType<MainMenuView>();
+            if (menu != null && MainMenuView.IsOpen) menu.Play();
         }
 
         void BackToEditor()
         {
             _testing = false;
             _testBar.SetActive(false);
+            ShowHud(false);
             _panel.SetActive(true);
-            game.IsPaused = true;
             Refresh();
         }
 
         // =====================================================================
-        // Editing with undo (Magic Sort CommandHistoryManager)
+        // Editing with undo
         // =====================================================================
 
         /// <summary>Undo state: the layout with its seeds, so undoing an edit brings the generated seeds back.</summary>
@@ -268,9 +358,10 @@ namespace BallSortGame.LevelEditor
         {
             if (from.Count == 0) return;
             to.Add(Snapshot());
+            int slot = _level.Slot;
             _level = JsonConvert.DeserializeObject<EditorLevel>(from[from.Count - 1]);
+            if (_level.Slot == 0) _level.Slot = slot;   // a state from before the first save of a new level: it is still that level
             from.RemoveAt(from.Count - 1);
-            _swapFrom = -1;
             Refresh();
         }
 
@@ -280,190 +371,138 @@ namespace BallSortGame.LevelEditor
 
         int PaletteSize => Mathf.Clamp(game.ballSprites != null && game.ballSprites.Length > 0 ? game.ballSprites.Length : 12, 1, MaxPaletteColors);
 
-        // =====================================================================
-        // Input on the board (Magic Sort EditorInputSystem)
-        // =====================================================================
-
-        void OnCellClicked(int tube, int slot)
+        /// <summary>
+        /// Tubes: a new tube is a full "?" tube of a new colour, so Save fills it and Reset keeps it (empty it with the
+        /// eraser and lower COLOURS for a spare tube; once the palette is used up new tubes start empty). Removing a
+        /// tube that had balls drops a colour again (never below the highest colour still placed).
+        /// </summary>
+        bool SetTubeCount(int count)
         {
-            if (_tool == EditorTool.Paint) Edit(() => _level.Paint(tube, slot, _selected));
-            else OnTubeClicked(tube);
-        }
-
-        void OnTubeClicked(int tube)
-        {
-            switch (_tool)
+            count = Mathf.Clamp(count, 1, BoardState.MaxTubes);
+            if (count == _level.TubeCount) return false;
+            while (_level.TubeCount < count)
             {
-                case EditorTool.Paint:
-                    // tapping the glass above the balls stacks onto the tube; the eraser takes the top ball
-                    int count = _level.Tubes[tube].Count;
-                    Edit(() => _selected == Eraser ? _level.Paint(tube, count - 1, Eraser) : _level.Paint(tube, count, _selected));
-                    break;
-                case EditorTool.Fill:
-                    Edit(() => _level.FillTube(tube, _selected));
-                    break;
-                case EditorTool.Swap:
-                    if (_swapFrom < 0) { _swapFrom = tube; RebuildBoard(); }
-                    else
-                    {
-                        int a = _swapFrom;
-                        _swapFrom = -1;
-                        if (a == tube) RebuildBoard();
-                        else Edit(() => _level.SwapTubes(a, tube));
-                    }
-                    break;
-                case EditorTool.Delete:
-                    Edit(() => _level.RemoveTube(tube));
-                    break;
+                _level.AddTube();
+                if (_level.ColorCount < PaletteSize)
+                {
+                    _level.SetColorCount(_level.ColorCount + 1, PaletteSize);
+                    _level.FillTube(_level.TubeCount - 1, EditorLevel.Random);
+                }
             }
+            while (_level.TubeCount > count)
+            {
+                int last = _level.TubeCount - 1;
+                bool hadBalls = _level.Tubes[last].Count > 0;
+                _level.RemoveTube(last);
+                if (hadBalls) _level.SetColorCount(_level.ColorCount - 1, PaletteSize);
+            }
+            return true;
         }
 
-        void SetTool(EditorTool tool)
+        /// <summary>Reset: every colour a full "?" tube plus the current number of spare tubes (at least two).</summary>
+        void Reset()
         {
-            _tool = tool;
-            _swapFrom = -1;
-            RefreshTools();
-            RebuildBoard();
-            Info(tool switch
+            int colors = Mathf.Min(_level.ColorCount, PaletteSize);
+            int empties = Mathf.Max(2, _level.TubeCount - colors);
+            var lv = EditorLevel.Standard(_level.Name, colors, empties, _level.Capacity);
+            lv.Slot = _level.Slot;
+            Replace(lv);
+        }
+
+        // =====================================================================
+        // Taps on the board (the real tubes, hit through their colliders)
+        // =====================================================================
+
+        void TapBoard()
+        {
+            if (GameManager.IsPointerOverUi()) return;
+            if (game.cam == null) return;
+            Vector3 wp = game.cam.ScreenToWorldPoint(PointerInput.Position);
+            var hit = Physics2D.OverlapPoint(new Vector2(wp.x, wp.y));
+            if (hit == null || !hit.TryGetComponent(out Tube tube)) return;
+            int index = tube.Index;
+            if (index < 0 || index >= _level.TubeCount) return;
+
+            float localY = tube.transform.InverseTransformPoint(wp).y;
+            int slot = Mathf.FloorToInt((localY - tube.FirstBallY + tube.BallPitch / 2f) / tube.BallPitch);
+            int count = _level.Tubes[index].Count;
+            if (slot < 0) slot = 0;
+            if (_selected == InOnlyTool || _selected == OutOnlyTool || _selected == HiddenTool)
             {
-                EditorTool.Paint => "Paint: tap a slot to place the selected colour or ?, or erase it.",
-                EditorTool.Fill => "Fill tube: tap a tube to fill it with the selected value (? = luck tube, Erase = empty tube).",
-                EditorTool.Swap => "Move: tap two tubes to swap their places.",
-                _ => "Delete: tap a tube to remove it.",
-            }, Color.white);
+                // kind tools: set the one-way / hidden rule, or back to normal when the tube already has it
+                var kind = _selected == InOnlyTool ? TubeKind.InOnly : _selected == OutOnlyTool ? TubeKind.OutOnly : TubeKind.Hidden;
+                if (_level.KindOf(index) == kind) kind = TubeKind.Normal;
+                Edit(() => _level.SetKind(index, kind));
+                return;
+            }
+            if (_selected == HeavyTool)
+            {
+                // heavy tool: the weight goes on (or off) the tube's bottom ball, whatever its colour
+                if (count == 0) { Status("Heavy: tap a ball. The bottom ball of its tube gets the weight (tap again to take it off).", EditorUI.Bad); return; }
+                if (slot > 0 && slot < count) { Status("Only the bottom ball of a tube can be heavy: tap the bottom ball.", EditorUI.Bad); return; }
+                Edit(() => _level.SetHeavy(index, !_level.IsHeavy(index)));
+                return;
+            }
+            if (_level.KindOf(index) == TubeKind.InOnly && _selected != Eraser)
+            {
+                Status("In-only tubes start empty. Tap it with the IN tool to make it a normal tube again.", EditorUI.Bad);
+                return;
+            }
+            if (slot < count)
+            {
+                // a ball: recolour it, or take it out with the eraser (the balls above drop down)
+                Edit(() => _level.Paint(index, slot, _selected));
+            }
+            else
+            {
+                // empty glass: fill the free slots with the value; the eraser empties the tube
+                Edit(() =>
+                {
+                    if (_selected == Eraser) return _level.FillTube(index, Eraser);
+                    bool any = false;
+                    while (_level.Tubes[index].Count < _level.Capacity && _level.Paint(index, _level.Tubes[index].Count, _selected)) any = true;
+                    return any;
+                });
+            }
         }
 
         void SelectValue(int value)
         {
             _selected = value;
-            if (_tool == EditorTool.Swap || _tool == EditorTool.Delete) SetTool(EditorTool.Paint);
             RefreshPalette();
         }
 
         // =====================================================================
-        // Actions
+        // Check / Save (generator = the local stand-in for Magic Sort's SolveLevelRequest backend)
         // =====================================================================
 
-        void LoadPackLevel()
-        {
-            var stage = game.Stage;
-            if (stage == null || stage.Levels.Count == 0) { Info("No level pack loaded.", EditorUI.Bad); return; }
-            var data = stage.Levels[(_packLevel - 1) % stage.Levels.Count];
-            Replace(EditorLevel.FromLevelData(data, $"lv{_packLevel}_edit"));
-            Info($"Loaded level {_packLevel} ({data.PuzzleId}) of {game.levelPackResource} as a fixed layout.", EditorUI.Good);
-        }
-
-        void CopyLayout()
-        {
-            GUIUtility.systemCopyBuffer = JsonConvert.SerializeObject(_level, Formatting.Indented);
-            Info("Layout JSON copied to the clipboard.", EditorUI.Good);
-        }
-
-        void PasteLayout()
-        {
-            if (!EditorLevel.TryParse(GUIUtility.systemCopyBuffer ?? "", out var level, out var error))
-            {
-                Info("Clipboard: " + error, EditorUI.Bad);
-                return;
-            }
-            var seeds = level.Seeds;
-            Replace(level);
-            _level.Seeds = seeds;
-            RefreshInfo();
-        }
-
-        void SaveLayout()
-        {
-            try
-            {
-                Directory.CreateDirectory(SaveDir);
-                string path = Path.Combine(SaveDir, SafeFileName(_level.Name) + ".json");
-                File.WriteAllText(path, JsonConvert.SerializeObject(_level, Formatting.Indented));
-                Info("Saved " + path, EditorUI.Good);
-            }
-            catch (Exception e)
-            {
-                Info("Save failed: " + e.Message, EditorUI.Bad);
-            }
-        }
-
-        static string SafeFileName(string s)
-        {
-            foreach (var c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
-            return s;
-        }
-
-        void LoadFile(string path)
-        {
-            if (!EditorLevel.TryParse(File.ReadAllText(path), out var level, out var error))
-            {
-                Info(Path.GetFileName(path) + ": " + error, EditorUI.Bad);
-                return;
-            }
-            CloseModal();
-            var seeds = level.Seeds;   // saved seeds belong to the saved layout, keep them
-            Replace(level);
-            _level.Seeds = seeds;
-            RefreshInfo();
-        }
-
         /// <summary>Rates one fill: solvable, optimal-ish move count, and the bot difficulty bucket.</summary>
-        void CheckSolvable()
+        void Check()
         {
-            if (!_level.Validate(out var error)) { Info(error, EditorUI.Bad); return; }
+            if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
             int seed = _level.HasRandom ? UnityEngine.Random.Range(1, int.MaxValue) : 0;
             var board = _level.Fill(seed, out error);
-            if (board == null) { Info(error, EditorUI.Bad); return; }
-            string what = _level.HasRandom ? $"Random fill (seed {seed})" : "Layout";
+            if (board == null) { Status(error, EditorUI.Bad); return; }
+            string what = _level.HasRandom ? "Fill of the hidden balls" : "Layout";
             LevelRating rating = null;
             RunJob("Checking with the solver and the playout bot...", () => rating = new LevelRater().Rate(board, RaterBudget.Default), () =>
             {
                 if (rating.Verdict == SolveVerdict.Solvable)
-                    Info($"{what}: solvable in {rating.OptimalMoves} moves, difficulty {rating.Bucket}/7 (bot loses {rating.Score:P0}).", EditorUI.Good);
+                    Status($"{what}: solvable in {rating.OptimalMoves} moves, difficulty {rating.Bucket}/7.", EditorUI.Good);
                 else
-                    Info(rating.Verdict == SolveVerdict.Unsolvable ? $"{what}: unsolvable." : $"{what}: the solver ran out of budget.", EditorUI.Bad);
+                    Status(rating.Verdict == SolveVerdict.Unsolvable ? $"{what}: unsolvable." : $"{what}: the solver ran out of budget.", EditorUI.Bad);
             });
         }
 
-        void AddToPack()
+        /// <summary>Generates the seeds when the layout changed since the last ones, then writes them into the pack.</summary>
+        void Save()
         {
-            var seeds = _level.Seeds;
-            if (seeds == null) { Info("Generate first: the pack stores rated seeds.", EditorUI.Bad); return; }
-            try
-            {
-                StageData stage = File.Exists(PackPath) ? JsonConvert.DeserializeObject<StageData>(File.ReadAllText(PackPath)) : null;
-                if (stage == null) stage = new StageData { StageId = "editor_pack" };
-                string name = _level.Name;
-                int idx = stage.Levels.FindIndex(l => l.PuzzleId == name || (l.PuzzleId != null && l.PuzzleId.StartsWith(name + "_difficulty")));
-                bool replaced = idx >= 0;
-                if (replaced) stage.Levels[idx] = seeds;
-                else { stage.Levels.Add(seeds); idx = stage.Levels.Count - 1; }
-                Directory.CreateDirectory(Path.GetDirectoryName(PackPath));
-                File.WriteAllText(PackPath, JsonConvert.SerializeObject(stage));
-#if UNITY_EDITOR
-                UnityEditor.AssetDatabase.Refresh();
-#endif
-                string where = Application.isEditor ? "data/editor_pack" : PackPath;
-                Info($"{(replaced ? "Updated" : "Added")} level {idx + 1} of {where} ({stage.Levels.Count} levels).", EditorUI.Good);
-            }
-            catch (Exception e)
-            {
-                Info("Pack write failed: " + e.Message, EditorUI.Bad);
-            }
-        }
-
-        // =====================================================================
-        // Seed generation (the local stand-in for Magic Sort's SolveLevelRequest backend)
-        // =====================================================================
-
-        void RunGenerate()
-        {
-            if (_job != null) { GenStatus("A job is already running.", EditorUI.Bad); return; }
-            if (!_level.Validate(out var error)) { GenStatus(error, EditorUI.Bad); return; }
+            if (_level.Seeds != null) { WritePack(); return; }
+            if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
             var design = _level.ToDesign();
             var layout = LayoutKey();
             bool random = _level.HasRandom;
-            int bucket = _genBucket, count = random ? _genCount : 1;
+            int bucket = _difficulty;
             int baseSeed = UnityEngine.Random.Range(1, 1_000_000);
             var results = new List<GeneratedLevel>();
             string genError = null;
@@ -476,8 +515,8 @@ namespace BallSortGame.LevelEditor
                 {
                     var options = new GeneratorOptions
                     {
-                        WantedBuckets = Enumerable.Repeat(bucket, count).ToList(),
-                        FallbackTolerance = 6,   // any solvable fill is better than none; the bucket is shown per seed
+                        WantedBuckets = Enumerable.Repeat(bucket, SeedsPerLevel).ToList(),
+                        FallbackTolerance = 6,   // any solvable fill is better than none; the bucket is stored per seed
                         Budget = RaterBudget.Fast,
                         BaseSeed = baseSeed,
                     };
@@ -495,28 +534,64 @@ namespace BallSortGame.LevelEditor
             }, () =>
             {
                 _generating = false;
-                if (LayoutKey() != layout) { GenStatus("The layout changed while generating; run again.", EditorUI.Bad); return; }
-                if (results.Count == 0) { GenStatus(genError ?? "No solvable fill found.", EditorUI.Bad); return; }
-                _level.Seeds = BuildSeeds(results);
-                GenStatus($"{results.Count} seed(s) ready." + (genError != null ? " " + genError : ""), genError == null ? EditorUI.Good : Color.white);
-                ShowResults();
-                RefreshInfo();
+                if (LayoutKey() != layout) { Status("The layout changed while generating; save again.", EditorUI.Bad); return; }
+                if (results.Count == 0) { Status(genError ?? "No solvable fill found.", EditorUI.Bad); return; }
+                _level.Seeds = BuildSeeds(results, _level.HiddenTopFirst());
+                WritePack();
             });
         }
 
-        static LevelData BuildSeeds(List<GeneratedLevel> results)
+        /// <summary>The seeds as pack data; <paramref name="hidden"/> marks the "?" cells, which the game keeps hidden.</summary>
+        static LevelData BuildSeeds(List<GeneratedLevel> results, List<List<int>> hidden)
         {
-            LevelData Make(GeneratedLevel g) => new LevelData { PuzzleId = g.Id, Tubes = g.TubesTopFirst, Steps = g.Steps, Difficulty = g.Bucket };
+            LevelData Make(GeneratedLevel g) => new LevelData { PuzzleId = g.Id, Tubes = g.TubesTopFirst, TubeKinds = g.TubeKinds, Heavy = g.Heavy, Steps = g.Steps, Difficulty = g.Bucket, Hidden = hidden };
             var main = Make(results[0]);
             if (results.Count > 1) main.Variants = results.Skip(1).Select(Make).ToList();
             return main;
         }
 
+        /// <summary>
+        /// Puts the seeds into the pack the game plays: the layout's slot is replaced, a new level (slot 0 or past the
+        /// end) is appended and becomes that slot. The game's loaded pack is updated in place, so it plays the new
+        /// level at once, and the JSON is written so it survives a restart.
+        /// </summary>
+        void WritePack()
+        {
+            var seeds = _level.Seeds;
+            try
+            {
+                string path = PackPath;
+                StageData stage = game.Stage;
+                if (stage == null && File.Exists(path)) stage = JsonConvert.DeserializeObject<StageData>(File.ReadAllText(path));
+                if (stage == null) stage = new StageData { StageId = Path.GetFileNameWithoutExtension(path) };
+                int slot = _level.Slot;
+                bool replaced = slot >= 1 && slot <= stage.Levels.Count;
+                if (replaced) stage.Levels[slot - 1] = seeds;
+                else { stage.Levels.Add(seeds); slot = stage.Levels.Count; _level.Slot = slot; }
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, JsonConvert.SerializeObject(stage));
+#if UNITY_EDITOR
+                UnityEditor.AssetDatabase.Refresh();
+#endif
+                string where = Application.isEditor ? game.levelPackResource : path;
+                string buckets = string.Join(" ", Enumerable.Range(0, seeds.SeedCount).Select(i => seeds.SeedAt(i).Difficulty));
+                RefreshPackLabel();
+                RefreshSlotLabel();
+                Status(replaced
+                    ? $"Level {slot} replaced in {where} ({stage.Levels.Count} levels). Seed difficulty: {buckets}."
+                    : $"Saved as new level {slot} of {where} ({stage.Levels.Count} levels). Seed difficulty: {buckets}.", EditorUI.Good);
+            }
+            catch (Exception e)
+            {
+                Status("Save failed: " + e.Message, EditorUI.Bad);
+            }
+        }
+
         void RunJob(string text, Action work, Action done)
         {
-            if (_job != null) { Info("A job is already running.", EditorUI.Bad); return; }
+            if (_job != null) { Status("Still working on the last job...", EditorUI.Bad); return; }
             _jobDone = done;
-            Info(text, Color.white);
+            Status(text, Color.white);
             _job = Task.Run(work);
         }
 
@@ -525,7 +600,7 @@ namespace BallSortGame.LevelEditor
             if (_job == null) return;
             if (!_job.IsCompleted)
             {
-                if (_generating && _genStatus != null) _genStatus.text = $"Generating... {_progFills} fills tried, {_progSeeds}/{_genCount} seeds";
+                if (_generating && _status != null) _status.text = $"Generating... {_progFills} fills tried, {_progSeeds}/{SeedsPerLevel} seeds";
                 return;
             }
             var job = _job;
@@ -535,16 +610,14 @@ namespace BallSortGame.LevelEditor
                 _generating = false;
                 var e = job.Exception?.GetBaseException();
                 Debug.LogException(e);
-                Info("Job failed: " + e?.Message, EditorUI.Bad);
-                GenStatus("Job failed: " + e?.Message, EditorUI.Bad);
+                Status("Job failed: " + e?.Message, EditorUI.Bad);
                 return;
             }
-            RefreshInfo();
             _jobDone?.Invoke();
         }
 
         // =====================================================================
-        // UI construction
+        // UI construction (game skin over the board, laid out like the HUD at 1080x2340)
         // =====================================================================
 
         void BuildUI()
@@ -560,122 +633,118 @@ namespace BallSortGame.LevelEditor
             _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             if (FindFirstObjectByType<EventSystem>() == null) new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
             var root = (RectTransform)canvasGo.transform;
+            var skin = EditorUI.Skin;
 
-            // ---- editor panel (opaque, covers the game)
-            var panel = EditorUI.Image("Editor", root, null, EditorUI.Background);
-            EditorUI.Stretch(panel.rectTransform, Vector2.zero, Vector2.zero);
+            // ---- editor overlay: transparent, the board shows through
+            var panel = EditorUI.Rect("Editor", root);
+            EditorUI.Stretch(panel, Vector2.zero, Vector2.zero);
+            SafeAreaFitter.Attach(panel);   // the rows hang from the panel's edges: keep them out of the cutout / gesture bar
             _panel = panel.gameObject;
-            var p = panel.transform;
 
-            var top = EditorUI.Band("top_bar", p, true, 0f, 130f, 0f);
-            top.gameObject.AddComponent<Image>().color = EditorUI.Bar;
-            EditorUI.RowLayout(top.gameObject, 14f).padding = new RectOffset(24, 24, 16, 16);
-            EditorUI.Button(top, "Close", EditorUI.Danger, Close, 40, 1f);
-            EditorUI.Label(EditorUI.Flex(EditorUI.Rect("title", top), 2.4f), "LEVEL EDITOR", 54, TextAnchor.MiddleCenter, Color.white);
-            EditorUI.Button(top, "Test", EditorUI.Go, Test, 46, 1.2f);
+            // top bar like the HUD: close left, title + status pill in the middle, TEST right
+            var top = EditorUI.Row("top_bar", panel, true, 68f, 146f, 24f);
+            EditorUI.IconButton(top, "btn - close", skin?.iconClose, "X", Close, 146f);
+            var title = EditorUI.Image("title", top, EditorUI.PillSprite, EditorUI.Tint(skin?.pill, EditorUI.Bar), true);
+            EditorUI.Flex(title, 1f);
+            var titleText = EditorUI.Shadowed(EditorUI.Label(title.transform, "LEVEL EDITOR", 40, TextAnchor.UpperCenter, Color.white));
+            titleText.rectTransform.offsetMin = new Vector2(20f, 80f);
+            titleText.rectTransform.offsetMax = new Vector2(-20f, -14f);
+            _status = EditorUI.Shadowed(EditorUI.Label(title.transform, "", 28, TextAnchor.UpperCenter, Color.white, FontStyle.Normal));
+            _status.rectTransform.offsetMin = new Vector2(20f, 12f);
+            _status.rectTransform.offsetMax = new Vector2(-20f, -66f);
+            EditorUI.PillButton(top, "TEST", false, Test, 220f, 44);
 
-            var row1 = EditorUI.Row("settings_1", p, true, 150f, 100f);
-            _nameField = EditorUI.Input(row1, "level name", v => { v = v.Trim(); if (v.Length > 0) _level.Name = v; }, 3f);
-            _capText = EditorUI.Stepper(row1, "Height", d => Edit(() => _level.SetCapacity(_level.Capacity + d)), 3.2f);
+            // size steppers
+            var sizes = EditorUI.Row("sizes", panel, true, 230f, 100f, 12f);
+            _tubesText = EditorUI.SkinStepper(sizes, "TUBES", d => Edit(() => SetTubeCount(_level.TubeCount + d)), 336f);
+            _capText = EditorUI.SkinStepper(sizes, "HEIGHT", d => Edit(() => _level.SetCapacity(_level.Capacity + d)), 336f);
+            _colorsText = EditorUI.SkinStepper(sizes, "COLOURS", d => Edit(() => _level.SetColorCount(_level.ColorCount + d, PaletteSize)), 336f);
 
-            var row2 = EditorUI.Row("settings_2", p, true, 262f, 100f);
-            _colorsText = EditorUI.Stepper(row2, "Colours", d => Edit(() => _level.SetColorCount(_level.ColorCount + d, PaletteSize)), 3.2f);
-            _packText = EditorUI.Stepper(row2, "Pack lv", d =>
+            // level row: which pack slot is being edited, and a number box + GO to jump to a slot (or start a new level)
+            var levelRow = EditorUI.Row("level", panel, true, 346f, 100f, 16f);
+            var slotPill = EditorUI.Image("slot_label", levelRow, EditorUI.PillSprite, EditorUI.Tint(skin?.pill, EditorUI.Bar), true);
+            EditorUI.Flex(slotPill, 1f);
+            _slotText = EditorUI.Shadowed(EditorUI.Label(slotPill.transform, "", 32, TextAnchor.MiddleCenter, Color.white));
+            _goField = EditorUI.Input(levelRow, "level no.", _ =>
             {
-                int n = game.Stage != null ? game.Stage.Levels.Count : 1;
-                _packLevel = (_packLevel - 1 + d + n) % n + 1;
-                _packText.text = _packLevel.ToString();
-            }, 3.2f);
-            EditorUI.Button(row2, "Load", EditorUI.ButtonColor, LoadPackLevel, 40, 1.3f);
+                if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) Go();
+            });
+            EditorUI.Fixed(_goField, 280f);
+            _goField.contentType = InputField.ContentType.IntegerNumber;
+            _goField.characterLimit = 6;
+            _goField.textComponent.alignment = TextAnchor.MiddleCenter;
+            ((Text)_goField.placeholder).alignment = TextAnchor.MiddleCenter;
+            if (_goField.targetGraphic is Image goBg) { goBg.sprite = EditorUI.PillSprite; goBg.color = EditorUI.Tint(skin?.pill, EditorUI.Bar); }
+            EditorUI.PillButton(levelRow, "GO", true, Go, 170f, 44);
 
-            var infoBand = EditorUI.Band("info", p, true, 374f, 92f);
-            infoBand.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
-            _info = EditorUI.Label(infoBand, "", 34, TextAnchor.MiddleLeft, Color.white, FontStyle.Normal);
-            _info.rectTransform.offsetMin = new Vector2(20f, 0f);
+            // pack row: which pack the game plays, and the bot that plays it through
+            BuildPackRow(panel);
 
-            _board = EditorUI.Stretch(EditorUI.Rect("board", p), new Vector2(24f, 650f), new Vector2(-24f, -480f));
+            // actions above the palette
+            var actions = EditorUI.Row("actions", panel, false, 300f, 110f, 16f);
+            _diffText = EditorUI.SkinStepper(actions, "DIFFICULTY", d => { _difficulty = Mathf.Clamp(_difficulty + d, 1, 7); _diffText.text = _difficulty.ToString(); }, 336f);
+            _undoButton = EditorUI.IconButton(actions, "btn - undo", skin?.iconUndo, "Undo", Undo);
+            EditorUI.IconButton(actions, "btn - reset", skin?.iconRestart, "Reset", Reset);
+            EditorUI.IconButton(actions, "btn - check", skin?.iconCheck, "Check", Check);
+            EditorUI.PillButton(actions, "SAVE", true, Save, 200f, 44);
 
-            BuildPalette(p);
+            BuildPalette(panel);
 
-            var tools = EditorUI.Row("tools", p, false, 280f, 100f);
-            AddTool(tools, EditorTool.Paint, "Paint");
-            AddTool(tools, EditorTool.Fill, "Fill tube");
-            AddTool(tools, EditorTool.Swap, "Move");
-            AddTool(tools, EditorTool.Delete, "Delete");
-            EditorUI.Button(tools, "+ Tube", EditorUI.Go, () => Edit(_level.AddTube), 40);
-
-            var actions = EditorUI.Row("actions_1", p, false, 160f, 100f);
-            _undoButton = EditorUI.Button(actions, "Undo", EditorUI.ButtonColor, Undo, 38);
-            _redoButton = EditorUI.Button(actions, "Redo", EditorUI.ButtonColor, Redo, 38);
-            EditorUI.Button(actions, "New", EditorUI.ButtonColor, () => Replace(EditorLevel.Standard(NewName(), Mathf.Min(_level.ColorCount, PaletteSize), 2, _level.Capacity)), 38);
-            EditorUI.Button(actions, "Clear", EditorUI.ButtonColor, () => Edit(_level.ClearBalls), 38);
-            EditorUI.Button(actions, "Check", EditorUI.ButtonColor, CheckSolvable, 38);
-            EditorUI.Button(actions, "Generate", EditorUI.Accent, OpenGenerate, 38, 1.4f);
-
-            var files = EditorUI.Row("actions_2", p, false, 40f, 100f);
-            EditorUI.Button(files, "Copy", EditorUI.ButtonColor, CopyLayout, 38);
-            EditorUI.Button(files, "Paste", EditorUI.ButtonColor, PasteLayout, 38);
-            EditorUI.Button(files, "Save", EditorUI.ButtonColor, SaveLayout, 38);
-            EditorUI.Button(files, "Open", EditorUI.ButtonColor, OpenFiles, 38);
-            EditorUI.Button(files, "To pack", EditorUI.Accent, AddToPack, 38, 1.3f);
-
-            // ---- modal window (generate / open)
-            var modal = EditorUI.Image("Modal", p, null, new Color(0f, 0f, 0f, 0.7f));
-            EditorUI.Stretch(modal.rectTransform, Vector2.zero, Vector2.zero);
-            var window = EditorUI.Image("window", modal.transform, EditorUI.RoundRect, EditorUI.Bar, true);
-            _modalWindow = EditorUI.Stretch(window.rectTransform, new Vector2(40f, 260f), new Vector2(-40f, -200f));
-            _modal = modal.gameObject;
-            _modal.SetActive(false);
-
-            // ---- floating "back" button shown while testing
-            var back = EditorUI.Button(root, "< Editor", EditorUI.Accent, BackToEditor, 44);
+            // ---- floating "back to the editor" pill shown while testing, above the booster bar
+            var back = EditorUI.PillButton(root, "< EDITOR", false, BackToEditor, 360f, 44);
             var brt = (RectTransform)back.transform;
-            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 1f);
-            brt.pivot = new Vector2(0.5f, 1f);
-            brt.anchoredPosition = new Vector2(0f, -190f);
-            brt.sizeDelta = new Vector2(340f, 96f);
+            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0f);
+            brt.pivot = new Vector2(0.5f, 0f);
+            brt.anchoredPosition = new Vector2(0f, 320f);
+            brt.sizeDelta = new Vector2(360f, 100f);
             _testBar = back.gameObject;
             _testBar.SetActive(false);
+
+            BuildBotUI(root);
         }
 
-        void AddTool(Transform row, EditorTool tool, string label)
-        {
-            var b = EditorUI.Button(row, label, EditorUI.ButtonColor, () => SetTool(tool), 38);
-            _toolImages[tool] = (Image)b.targetGraphic;
-        }
-
+        /// <summary>Palette at the bottom: the colours in use, "?", the HEAVY, IN and OUT tools and the eraser; the selected one wears a frame.</summary>
         void BuildPalette(Transform parent)
         {
-            var band = EditorUI.Band("palette", parent, false, 400f, 236f);
+            var band = EditorUI.Band("palette", parent, false, 36f, 250f);
             var grid = band.gameObject.AddComponent<GridLayoutGroup>();
-            grid.cellSize = new Vector2(112f, 112f);
-            grid.spacing = new Vector2(12f, 12f);
+            grid.cellSize = new Vector2(96f, 112f);
+            grid.spacing = new Vector2(8f, 8f);
             grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            grid.constraintCount = 8;
+            grid.constraintCount = 10;   // 14 colours + ?, heavy, hidden, IN, OUT, eraser = 20 swatches in two rows
             grid.childAlignment = TextAnchor.MiddleCenter;
 
             var values = new List<int>();
             for (int c = 1; c <= PaletteSize; c++) values.Add(c);
             values.Add(EditorLevel.Random);
+            values.Add(HeavyTool);
+            values.Add(HiddenTool);
+            values.Add(InOnlyTool);
+            values.Add(OutOnlyTool);
             values.Add(Eraser);
             foreach (int v in values)
             {
-                var bg = EditorUI.Image("swatch " + v, band, EditorUI.RoundRect, EditorUI.ButtonColor, true);
-                var b = bg.gameObject.AddComponent<Button>();
-                b.targetGraphic = bg;
+                var cell = EditorUI.Rect("swatch " + v, band);
+                var frame = EditorUI.Image("frame", cell, EditorUI.FrameSprite, EditorUI.Tint(EditorUI.Skin?.squareFrame, EditorUI.Accent), true);
+                frame.rectTransform.anchoredPosition = new Vector2(0f, 10f);
+                frame.rectTransform.sizeDelta = new Vector2(94f, 94f);
+                frame.raycastTarget = false;
+                var ball = BallImage(cell, v, 72f);
+                ball.rectTransform.anchoredPosition = new Vector2(0f, 10f);
+                var hit = cell.gameObject.AddComponent<Image>();
+                hit.color = Color.clear;
+                var b = cell.gameObject.AddComponent<Button>();
+                b.targetGraphic = hit;
+                b.transition = Selectable.Transition.None;
                 int value = v;
                 b.onClick.AddListener(() => SelectValue(value));
-                var icon = BallImage(bg.transform, v, 70f);
-                icon.rectTransform.anchoredPosition = new Vector2(0f, 12f);
-                if (v == Eraser) EditorUI.Label(icon.transform, "Erase", 24, TextAnchor.MiddleCenter, Color.white);
-                var usageRt = EditorUI.Rect("usage", bg.transform);
+                var usageRt = EditorUI.Rect("usage", cell);
                 usageRt.anchorMin = new Vector2(0f, 0f);
                 usageRt.anchorMax = new Vector2(1f, 0f);
                 usageRt.pivot = new Vector2(0.5f, 0f);
-                usageRt.sizeDelta = new Vector2(0f, 32f);
-                usageRt.anchoredPosition = new Vector2(0f, 2f);
-                var usage = EditorUI.Label(usageRt, "", 26, TextAnchor.MiddleCenter, Color.white);
-                _swatches.Add(new Swatch { Value = v, Bg = bg, Icon = icon, Usage = usage, IconColor = icon.color });
+                usageRt.sizeDelta = new Vector2(0f, 30f);
+                var usage = EditorUI.Shadowed(EditorUI.Label(usageRt, "", 24, TextAnchor.MiddleCenter, Color.white));
+                _swatches.Add(new Swatch { Value = v, Root = cell.gameObject, Frame = frame, Usage = usage });
             }
         }
 
@@ -684,7 +753,30 @@ namespace BallSortGame.LevelEditor
             var img = EditorUI.Image("ball", parent, EditorUI.Circle, Color.white);
             img.rectTransform.sizeDelta = new Vector2(size, size);
             img.preserveAspect = true;
-            if (value > 0)
+            img.raycastTarget = false;
+            var skin = EditorUI.Skin;
+            if (value == HeavyTool)
+            {
+                // a coloured ball wearing the cannonball weight, as on the board
+                var sprite = game.BallSpriteFor(1);
+                if (sprite != null) img.sprite = sprite;
+                if (game.heavyBallSprite != null)
+                {
+                    var weight = EditorUI.Image("weight", img.transform, game.heavyBallSprite, Color.white);
+                    weight.rectTransform.sizeDelta = new Vector2(size, size);
+                    weight.preserveAspect = true;
+                    weight.raycastTarget = false;
+                }
+                else EditorUI.Shadowed(EditorUI.Label(img.transform, "H", Mathf.RoundToInt(size * 0.6f), TextAnchor.MiddleCenter, Color.white));
+            }
+            else if (value == HiddenTool)
+            {
+                // the cover drawn over hidden tubes
+                img.sprite = game.hiddenTubeSprite != null ? game.hiddenTubeSprite : game.tubeSprite;
+                img.color = game.hiddenTubeSprite != null ? Color.white : new Color(0.25f, 0.55f, 0.42f, 1f);
+                if (img.sprite == null) EditorUI.Shadowed(EditorUI.Label(img.transform, "#", Mathf.RoundToInt(size * 0.6f), TextAnchor.MiddleCenter, Color.white));
+            }
+            else if (value > 0)
             {
                 var sprite = game.BallSpriteFor(value);
                 if (sprite != null) img.sprite = sprite;
@@ -692,96 +784,41 @@ namespace BallSortGame.LevelEditor
             }
             else if (value == EditorLevel.Random)
             {
-                img.color = new Color(0.60f, 0.60f, 0.68f, 1f);
-                EditorUI.Label(img.transform, "?", Mathf.RoundToInt(size * 0.6f), TextAnchor.MiddleCenter, Color.white);
+                var sprite = game.BallSpriteFor(1);
+                if (sprite != null) img.sprite = sprite;
+                img.color = new Color(0.42f, 0.42f, 0.50f, 1f);
+                EditorUI.Shadowed(EditorUI.Label(img.transform, "?", Mathf.RoundToInt(size * 0.6f), TextAnchor.MiddleCenter, Color.white));
             }
-            else img.color = new Color(0f, 0f, 0f, 0.35f);
+            else if (value == InOnlyTool || value == OutOnlyTool)
+            {
+                // the tube kind tools: the arrow drawn under one-way tubes, pointing down for IN and up for OUT
+                img.sprite = EditorUI.SquareSprite;
+                img.color = EditorUI.Tint(skin?.buttonSquare, EditorUI.ButtonColor);
+                img.type = Image.Type.Sliced;
+                if (skin != null && skin.iconArrow != null)
+                {
+                    var arrow = EditorUI.Image("icon", img.transform, skin.iconArrow, Color.white);
+                    arrow.rectTransform.sizeDelta = new Vector2(size * 0.6f, size * 0.6f);
+                    arrow.rectTransform.localRotation = Quaternion.Euler(0f, 0f, value == InOnlyTool ? 180f : 0f);
+                    arrow.preserveAspect = true;
+                    arrow.raycastTarget = false;
+                }
+                else EditorUI.Shadowed(EditorUI.Label(img.transform, value == InOnlyTool ? "v" : "^", Mathf.RoundToInt(size * 0.6f), TextAnchor.MiddleCenter, Color.white));
+            }
+            else
+            {
+                img.sprite = EditorUI.CircleSprite;
+                img.color = EditorUI.Tint(skin?.buttonCircle, EditorUI.Danger);
+                if (skin != null && skin.iconClose != null)
+                {
+                    var x = EditorUI.Image("icon", img.transform, skin.iconClose, Color.white);
+                    x.rectTransform.sizeDelta = new Vector2(size * 0.55f, size * 0.55f);
+                    x.preserveAspect = true;
+                    x.raycastTarget = false;
+                }
+                else EditorUI.Shadowed(EditorUI.Label(img.transform, "X", Mathf.RoundToInt(size * 0.5f), TextAnchor.MiddleCenter, Color.white));
+            }
             return img;
-        }
-
-        // =====================================================================
-        // Modals
-        // =====================================================================
-
-        RectTransform OpenModal(string title)
-        {
-            _modal.SetActive(true);
-            for (int i = _modalWindow.childCount - 1; i >= 0; i--) Destroy(_modalWindow.GetChild(i).gameObject);
-            _genStatus = null;
-            _genList = null;
-            var head = EditorUI.Row("head", _modalWindow, true, 20f, 100f);
-            EditorUI.Label(EditorUI.Flex(EditorUI.Rect("title", head), 4f), title, 50, TextAnchor.MiddleLeft, Color.white);
-            EditorUI.Button(head, "Close", EditorUI.ButtonColor, CloseModal, 40, 1.4f);
-            return _modalWindow;
-        }
-
-        void CloseModal()
-        {
-            if (_modal != null) _modal.SetActive(false);
-            _genStatus = null;
-            _genList = null;
-        }
-
-        void OpenFiles()
-        {
-            var win = OpenModal("Open layout");
-            var list = EditorUI.ScrollList(win, new Vector2(24f, 24f), new Vector2(-24f, -136f));
-            var files = Directory.Exists(SaveDir)
-                ? new DirectoryInfo(SaveDir).GetFiles("*.json").Where(f => f.Name != "editor_pack.json").OrderByDescending(f => f.LastWriteTime).ToList()
-                : new List<FileInfo>();
-            if (files.Count == 0) EditorUI.ListButton(list, "No saved layouts in " + SaveDir, new Color(0f, 0f, 0f, 0f), null).interactable = false;
-            foreach (var f in files)
-            {
-                string path = f.FullName;
-                EditorUI.ListButton(list, $"{Path.GetFileNameWithoutExtension(f.Name)}    {f.LastWriteTime:yyyy-MM-dd HH:mm}", EditorUI.ButtonColor, () => LoadFile(path));
-            }
-        }
-
-        void OpenGenerate()
-        {
-            var win = OpenModal("Generate seeds");
-            var row1 = EditorUI.Row("options", win, true, 140f, 100f);
-            Text bucketText = null, countText = null;
-            bucketText = EditorUI.Stepper(row1, "Difficulty", d => { _genBucket = Mathf.Clamp(_genBucket + d, 1, 7); bucketText.text = _genBucket.ToString(); });
-            countText = EditorUI.Stepper(row1, "Seeds", d => { _genCount = Mathf.Clamp(_genCount + d, 1, 10); countText.text = _genCount.ToString(); });
-            bucketText.text = _genBucket.ToString();
-            countText.text = _genCount.ToString();
-
-            var row2 = EditorUI.Row("run", win, true, 256f, 100f);
-            EditorUI.Button(row2, "Run", EditorUI.Go, RunGenerate, 42);
-            EditorUI.Button(row2, "Test seeds", EditorUI.ButtonColor, () => { if (_level.Seeds != null) PlayTest(_level.Seeds); else GenStatus("Run first.", EditorUI.Bad); }, 38);
-            EditorUI.Button(row2, "To pack", EditorUI.Accent, AddToPack, 38);
-
-            var status = EditorUI.Band("status", win, true, 372f, 90f);
-            _genStatus = EditorUI.Label(status, "", 34, TextAnchor.MiddleLeft, Color.white, FontStyle.Normal);
-            _genList = EditorUI.ScrollList(win, new Vector2(24f, 24f), new Vector2(-24f, -478f));
-
-            GenStatus(_level.HasRandom
-                ? "Fills the ? slots at random, rates every fill with the playout bot (1 easy .. 7 very hard) and keeps the wanted difficulty."
-                : "No ? slots: Run rates the fixed layout once.", EditorUI.Muted);
-            ShowResults();
-        }
-
-        void GenStatus(string text, Color color)
-        {
-            if (_genStatus == null) { Info(text, color); return; }
-            _genStatus.text = text;
-            _genStatus.color = color;
-        }
-
-        void ShowResults()
-        {
-            if (_genList == null) return;
-            for (int i = _genList.childCount - 1; i >= 0; i--) Destroy(_genList.GetChild(i).gameObject);
-            var seeds = _level.Seeds;
-            if (seeds == null) return;
-            for (int i = 0; i < seeds.SeedCount; i++)
-            {
-                var s = seeds.SeedAt(i);
-                var single = new LevelData { PuzzleId = s.PuzzleId, Tubes = s.Tubes, Steps = s.Steps, Difficulty = s.Difficulty };
-                string label = $"Play   {s.PuzzleId}    difficulty {s.Difficulty}    {s.Steps?.Count ?? 0} moves";
-                EditorUI.ListButton(_genList, label, EditorUI.ButtonColor, () => PlayTest(single));
-            }
         }
 
         // =====================================================================
@@ -791,48 +828,54 @@ namespace BallSortGame.LevelEditor
         void Refresh()
         {
             if (_canvas == null || _level == null) return;
-            _nameField.SetTextWithoutNotify(_level.Name);
+            _tubesText.text = _level.TubeCount.ToString();
             _capText.text = _level.Capacity.ToString();
             _colorsText.text = _level.ColorCount.ToString();
-            _packText.text = _packLevel.ToString();
+            _diffText.text = _difficulty.ToString();
             _undoButton.interactable = _undo.Count > 0;
-            _redoButton.interactable = _redo.Count > 0;
-            RefreshTools();
+            if (_selected > _level.ColorCount) _selected = 1;
+            RefreshSlotLabel();
             RefreshPalette();
-            RebuildBoard();
-            RefreshInfo();
+            ShowBoard();
+            RefreshStatus();
         }
 
-        void Info(string text, Color color)
+        /// <summary>Puts the layout on the real board, zoomed out enough to keep the controls off the tubes.</summary>
+        void ShowBoard()
         {
-            if (_info == null) return;
-            _info.text = text;
-            _info.color = color;
+            int n = _level.TubeCount;
+            float minSize = 0f;
+            if (n > 0)
+            {
+                int rows = Mathf.CeilToInt(n / (float)Mathf.Max(1, game.MaxTubesPerRow));
+                float top = (rows - 1) / 2f * game.RowGap + game.TubeHeight / 2f + 0.3f;
+                minSize = top / Mathf.Max(0.2f, 1f - 2f * FreeScreenFraction - Mathf.Abs(game.BoardOffsetFactor));
+            }
+            game.MinCameraSize = minSize;
+            game.Preview(_level.Tubes, _level.Capacity, _level.Kinds, _level.HeavyFlags);
         }
 
-        void RefreshInfo()
+        void Status(string text, Color color)
+        {
+            if (_status == null) return;
+            _status.text = text;
+            _status.color = color;
+        }
+
+        void RefreshStatus()
         {
             if (_job != null) return;   // the running job owns the line
-            if (!_level.Validate(out var error)) { Info(error, EditorUI.Bad); return; }
-            int det = 0, luck = 0, part = 0, empty = 0;
-            for (int i = 0; i < _level.TubeCount; i++)
-            {
-                switch (_level.PresetOf(i))
-                {
-                    case TubePreset.Deterministic: det++; break;
-                    case TubePreset.Luck: luck++; break;
-                    case TubePreset.PartialLuck: part++; break;
-                    default: empty++; break;
-                }
-            }
-            string s = $"OK: {_level.TubeCount} tubes, {_level.ColorCount} colours x {_level.Capacity}. Fixed {det}, luck {luck}, partial {part}, empty {empty}.";
-            if (_level.Seeds != null) s += $" {_level.Seeds.SeedCount} seed(s) ready.";
-            Info(s, EditorUI.Good);
-        }
-
-        void RefreshTools()
-        {
-            foreach (var kv in _toolImages) kv.Value.color = kv.Key == _tool ? EditorUI.Accent : EditorUI.ButtonColor;
+            if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
+            string s = $"{_level.TubeCount} tubes, {_level.ColorCount} colours x {_level.Capacity}";
+            if (_level.HasRandom) s += $", {_level.RandomSlots} hidden balls";
+            if (_level.HasHeavy) s += $", {_level.HeavyCount} heavy";
+            int inOnly = _level.CountKind(TubeKind.InOnly), outOnly = _level.CountKind(TubeKind.OutOnly);
+            if (inOnly > 0) s += $", {inOnly} in-only";
+            if (outOnly > 0) s += $", {outOnly} out-only";
+            int hiddenTubes = _level.CountKind(TubeKind.Hidden);
+            if (hiddenTubes > 0) s += $", {hiddenTubes} hidden tube(s)";
+            s += _level.Seeds != null ? $". {_level.Seeds.SeedCount} seed(s) ready." : ". Ready to test or save.";
+            Status(s, EditorUI.Good);
         }
 
         void RefreshPalette()
@@ -840,15 +883,21 @@ namespace BallSortGame.LevelEditor
             int cap = _level.Capacity;
             foreach (var s in _swatches)
             {
-                s.Bg.color = s.Value == _selected ? EditorUI.Accent : EditorUI.ButtonColor;
-                if (s.Value > 0)
+                bool shown = s.Value <= _level.ColorCount;   // colours beyond the COLOURS count stay hidden; ?, tools and eraser are <= 0
+                s.Root.SetActive(shown);
+                if (!shown) continue;
+                s.Frame.enabled = s.Value == _selected;
+                if (s.Value == HeavyTool)
+                {
+                    int n = _level.HeavyCount;
+                    s.Usage.text = n > 0 ? $"HEAVY {n}" : "HEAVY";
+                    s.Usage.color = Color.white;
+                }
+                else if (s.Value > 0)
                 {
                     int used = _level.UsageOf(s.Value);
-                    bool inSet = s.Value <= _level.ColorCount;
-                    s.Usage.text = inSet ? $"{used}/{cap}" : "";
+                    s.Usage.text = $"{used}/{cap}";
                     s.Usage.color = used > cap ? EditorUI.Bad : used == cap ? EditorUI.Good : Color.white;
-                    var c = s.IconColor;
-                    s.Icon.color = inSet ? c : new Color(c.r, c.g, c.b, 0.3f);
                 }
                 else if (s.Value == EditorLevel.Random)
                 {
@@ -856,76 +905,20 @@ namespace BallSortGame.LevelEditor
                     s.Usage.text = $"{have}/{need}";
                     s.Usage.color = have == need ? EditorUI.Good : have > need ? EditorUI.Bad : Color.white;
                 }
+                else if (s.Value == HiddenTool)
+                {
+                    int n = _level.CountKind(TubeKind.Hidden);
+                    s.Usage.text = n > 0 ? $"HIDE {n}" : "HIDE";
+                    s.Usage.color = Color.white;
+                }
+                else if (s.Value == InOnlyTool || s.Value == OutOnlyTool)
+                {
+                    int n = _level.CountKind(s.Value == InOnlyTool ? TubeKind.InOnly : TubeKind.OutOnly);
+                    s.Usage.text = (s.Value == InOnlyTool ? "IN" : "OUT") + (n > 0 ? $" {n}" : "");
+                    s.Usage.color = Color.white;
+                }
+                else s.Usage.text = "";
             }
         }
-
-        void RebuildBoard()
-        {
-            if (_board == null) return;
-            for (int i = _board.childCount - 1; i >= 0; i--) Destroy(_board.GetChild(i).gameObject);
-            var r = _board.rect;
-            _boardSize = r.size;
-            int n = _level.TubeCount, cap = _level.Capacity;
-            if (n == 0)
-            {
-                EditorUI.Label(_board, "No tubes yet. Tap + Tube.", 44, TextAnchor.MiddleCenter, EditorUI.Muted);
-                return;
-            }
-            if (r.width < 10f || r.height < 10f) return;
-
-            int rows = Mathf.CeilToInt(n / 7f);
-            int perRow = Mathf.CeilToInt(n / (float)rows);
-            const float tagH = 46f;
-            float colW = r.width / perRow, rowH = r.height / rows;
-            float cell = Mathf.Min(colW * 0.8f / 1.12f, (rowH - tagH - 24f) / (cap + 0.3f), 130f);
-            var tubeSize = new Vector2(cell * 1.12f, cell * (cap + 0.3f));
-
-            for (int i = 0; i < n; i++)
-            {
-                int row = i / perRow, col = i % perRow;
-                int inRow = Mathf.Min(perRow, n - row * perRow);
-                float x = (col - (inRow - 1) / 2f) * colW;
-                float y = r.height / 2f - rowH * (row + 0.5f) + tagH / 2f;
-                BuildTube(i, new Vector2(x, y), tubeSize, cell);
-
-                var tag = EditorUI.Rect("tag", _board);
-                tag.anchoredPosition = new Vector2(x, y - tubeSize.y / 2f - tagH / 2f);
-                tag.sizeDelta = new Vector2(colW, tagH);
-                EditorUI.Label(tag, $"{i + 1} {PresetTag(_level.PresetOf(i))}", 28, TextAnchor.MiddleCenter, EditorUI.Muted, FontStyle.Normal);
-            }
-        }
-
-        void BuildTube(int index, Vector2 pos, Vector2 size, float cell)
-        {
-            Color glass = index == _swapFrom ? EditorUI.Accent
-                : _tool == EditorTool.Delete ? new Color(EditorUI.Danger.r, EditorUI.Danger.g, EditorUI.Danger.b, 0.35f)
-                : new Color(1f, 1f, 1f, 0.12f);
-            var tube = EditorUI.Image("tube " + (index + 1), _board, EditorUI.RoundRect, glass, true);
-            tube.rectTransform.anchoredPosition = pos;
-            tube.rectTransform.sizeDelta = size;
-            var tb = tube.gameObject.AddComponent<Button>();
-            tb.targetGraphic = tube;
-            tb.onClick.AddListener(() => OnTubeClicked(index));
-
-            var cells = _level.Tubes[index];
-            for (int s = 0; s < _level.Capacity; s++)
-            {
-                int value = s < cells.Count ? cells[s] : 0;
-                var ball = BallImage(tube.transform, value, cell * 0.9f);
-                ball.rectTransform.anchoredPosition = new Vector2(0f, -size.y / 2f + cell * 0.15f + cell * (s + 0.5f));
-                var cb = ball.gameObject.AddComponent<Button>();
-                cb.targetGraphic = ball;
-                int slot = s;
-                cb.onClick.AddListener(() => OnCellClicked(index, slot));
-            }
-        }
-
-        static string PresetTag(TubePreset preset) => preset switch
-        {
-            TubePreset.Deterministic => "fixed",
-            TubePreset.Luck => "luck",
-            TubePreset.PartialLuck => "partial",
-            _ => "empty",
-        };
     }
 }

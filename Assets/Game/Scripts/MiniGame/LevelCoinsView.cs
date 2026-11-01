@@ -28,8 +28,10 @@ namespace BallSortGame.MiniGame
         public GameManager game;
 
         [Header("Economy")]
-        [Tooltip("Coins paid for every tube filled with one colour.")]
+        [Tooltip("Coin sprites that burst from every tube filled with one colour.")]
         public int CoinsPerTube = 3;
+        [Tooltip("Coins each burst sprite is worth, so a filled tube pays CoinsPerTube x CoinValue.")]
+        public int CoinValue = 10;
 
         [Header("Layout")]
         [Tooltip("Counter centre from the top right corner, in canvas units (1080 x 2340); clear of the top bar and the no-moves close button.")]
@@ -146,11 +148,11 @@ namespace BallSortGame.MiniGame
 
         void OnTubeCompleted(Tube tube)
         {
-            if (CoinsPerTube <= 0 || Testing() || !_paidTubes.Add(tube.Index)) return;
+            if (CoinsPerTube <= 0 || CoinValue <= 0 || Testing() || !_paidTubes.Add(tube.Index)) return;
             var cam = game.cam != null ? game.cam : Camera.main;
             if (cam == null)
             {
-                SetCounter(_levelCoins + CoinsPerTube);
+                SetCounter(_levelCoins + CoinsPerTube * CoinValue);
                 return;
             }
             // fan the coins out above the tube, then each swoops into the counter
@@ -163,7 +165,7 @@ namespace BallSortGame.MiniGame
                 Vector3 burst = from + new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * (UnityEngine.Random.Range(130f, 180f) * unit);
                 StartCoroutine(Fly(from, burst, PopTime, _counterCoin, -0.25f, i * 0.07f, () =>
                 {
-                    SetCounter(_levelCoins + 1);
+                    SetCounter(_levelCoins + CoinValue);
                     _counterPunch = 1f;
                 }));
             }

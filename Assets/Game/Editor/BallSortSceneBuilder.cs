@@ -13,9 +13,14 @@ using UnityEngine.UI;
 namespace BallSortGame.EditorTools
 {
     /// <summary>
-    /// One-shot builder: configures the imported art, creates the Tube/Ball prefabs, and builds the example scene
-    /// with the HUD laid out like the reference game's GameViewV3 (1080x2340 reference resolution).
-    /// Menu: BallSort > Build Example Scene.
+    /// Scene builder. <b>BallSort > Build Example Scene</b> configures the imported art, creates the Tube/Ball prefabs and
+    /// builds the example scene from scratch. <b>BallSort > Rebuild HUD</b> only replaces the HUD canvas of the open
+    /// scene (and the background), keeping the camera, GameManager and prefabs: that is the one to run after a UI change.
+    ///
+    /// Layout follows the UI mockups at the 1080x2340 reference resolution (mockup pixels x 1.617):
+    /// top bar (restart button / LEVEL pill / settings button; MAIN MENU is on the settings page), booster bar at the bottom with the 'i' info panel,
+    /// the settings page (back arrow, haptic / music / sound), "OUT OF MOVES" and "WELL DONE" popups and the
+    /// main menu (logo over the dimmed board, tap to play).
     /// </summary>
     public static class BallSortSceneBuilder
     {
@@ -23,8 +28,11 @@ namespace BallSortGame.EditorTools
         const string ArtUI = Root + "/Art/UI/";
         const string ScenePath = Root + "/Scenes/BallSortExample.unity";
 
-        static readonly Color Purple = new Color(0.49f, 0.45f, 0.93f, 1f);     // tint for the grey round-rect button bg
-        static readonly Color TopBarIcon = Color.white;
+        internal static readonly Color Gold = new Color(1f, 0.72f, 0.12f, 1f);         // popup titles
+        internal static readonly Color Navy = new Color(0.12f, 0.06f, 0.30f, 1f);       // outlines, panel titles
+        internal static readonly Color CamBackground = new Color(0.05f, 0.04f, 0.16f, 1f);
+        internal static readonly Color Dim = new Color(0.03f, 0.02f, 0.10f, 0.82f);       // behind popups and the menu
+        static readonly Vector2 Center = new Vector2(0.5f, 0.5f);
 
         [MenuItem("BallSort/Build Example Scene")]
         public static void Build()
@@ -33,7 +41,32 @@ namespace BallSortGame.EditorTools
             var tubePrefab = BuildTubePrefab();
             var ballPrefab = BuildBallPrefab();
             BuildScene(tubePrefab, ballPrefab);
+            EditorSceneManager.SaveOpenScenes();
             Debug.Log("BallSort example scene built: " + ScenePath);
+        }
+
+        /// <summary>Replaces the HUD canvas (and the main menu) of the open scene with the mockup layout; the rest of the scene stays.</summary>
+        [MenuItem("BallSort/Rebuild HUD")]
+        public static void RebuildHud()
+        {
+            var hud = Object.FindFirstObjectByType<GameHUD>(FindObjectsInactive.Include);
+            if (hud == null)
+            {
+                Debug.LogWarning("Rebuild HUD: no GameHUD in the open scene.");
+                return;
+            }
+            var gm = hud.game != null ? hud.game : Object.FindFirstObjectByType<GameManager>();
+            var skin = NewUISkinBuilder.BuildSkin();
+            for (int i = hud.transform.childCount - 1; i >= 0; i--) Object.DestroyImmediate(hud.transform.GetChild(i).gameObject);
+            hud.mainMenu = null;
+            FillHud(hud, gm, skin);
+            MainMenuBuilder.Add();
+            ApplyWordArt(hud, skin);
+            ApplyBackground(skin);
+            EditorUtility.SetDirty(hud);
+            EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
+            EditorSceneManager.SaveOpenScenes();
+            Debug.Log("Rebuild HUD: HUD rebuilt after the mockups and the scene saved.");
         }
 
         // ------------------------------------------------------------------ art import
@@ -51,6 +84,7 @@ namespace BallSortGame.EditorTools
             foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { Root + "/Art" }))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (path.StartsWith(ArtUI + "NewUI/") || path.StartsWith(ArtUI + "Generated/")) continue;   // own sprite import; slices set by NewUISkinBuilder
                 var imp = AssetImporter.GetAtPath(path) as TextureImporter;
                 if (imp == null) continue;
                 imp.textureType = TextureImporterType.Sprite;
@@ -103,6 +137,7 @@ namespace BallSortGame.EditorTools
         // ------------------------------------------------------------------ scene
         static void BuildScene(Tube tubePrefab, Ball ballPrefab)
         {
+            var skin = NewUISkinBuilder.BuildSkin();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             // camera
@@ -112,7 +147,7 @@ namespace BallSortGame.EditorTools
             cam.orthographic = true;
             cam.orthographicSize = 5f;
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0.114f, 0.114f, 0.114f, 1f);
+            cam.backgroundColor = CamBackground;
             camGo.transform.position = new Vector3(0f, 0f, -10f);
 
             // 2D global light so lit sprite materials render under the URP 2D renderer
@@ -124,17 +159,18 @@ namespace BallSortGame.EditorTools
             // background
             var bgGo = new GameObject("Background", typeof(SpriteRenderer), typeof(BackgroundFitter));
             var bgSr = bgGo.GetComponent<SpriteRenderer>();
-            bgSr.sprite = LoadSprite(Root + "/Art/Backgrounds/theme_default_v3.png");
+            bgSr.sprite = skin.background != null ? skin.background : LoadSprite(Root + "/Art/Backgrounds/theme_default_v3.png");
             bgSr.sortingOrder = -10;
             bgGo.GetComponent<BackgroundFitter>().cam = cam;
 
             // game manager
-            var gmGo = new GameObject("GameMgr", typeof(GameMgr));
-            var gm = gmGo.GetComponent<GameMgr>();
+            var gmGo = new GameObject("GameManager", typeof(GameManager));
+            var gm = gmGo.GetComponent<GameManager>();
             gm.cam = cam;
             gm.tubePrefab = tubePrefab;
             gm.ballPrefab = ballPrefab;
             gm.tubeSprite = LoadSprite(Root + "/Art/Tubes/Tube.png");
+            gm.smallTubeSprite = LoadSprite(Root + "/Art/Tubes/Tube short.PNG");
             var balls = new List<Sprite>();
             for (int i = 0; i < 13; i++)
             {
@@ -142,17 +178,31 @@ namespace BallSortGame.EditorTools
                 if (s != null) balls.Add(s);
             }
             gm.ballSprites = balls.ToArray();
+            gm.heavyBallSprite = LoadSprite(Root + "/Art/Balls/NewBalls/Cannonball.png");
+            // imported as a sprite sheet (Multiple): take its first sprite
+            foreach (var o in AssetDatabase.LoadAllAssetsAtPath(Root + "/Art/Tubes/Hidden tube.png"))
+                if (o is Sprite hidden) { gm.hiddenTubeSprite = hidden; break; }
             var tubesRoot = new GameObject("Tubes").transform;
             tubesRoot.SetParent(gmGo.transform, false);
             gm.tubesRoot = tubesRoot;
-            gm.levelPackResource = "data/lv_1_100";
-            gm.startLevel = 1;
+            gm.levelPackResource = "data/levels";
 
             // event system
-            var es = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
 
             // HUD
-            BuildHud(gm);
+            var canvasGo = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(GameHUD));
+            var canvas = canvasGo.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            var scaler = canvasGo.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080, 2340);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0f;
+            FillHud(canvasGo.GetComponent<GameHUD>(), gm, skin);
+            MainMenuBuilder.Add();
+            ApplyWordArt(canvasGo.GetComponent<GameHUD>(), skin);
+            BackgroundStarsBuilder.Add();
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddToBuildSettings(ScenePath);
@@ -166,99 +216,226 @@ namespace BallSortGame.EditorTools
             EditorBuildSettings.scenes = scenes.ToArray();
         }
 
-        // ------------------------------------------------------------------ HUD
-        static Font _font;
-        static Font UIFont => _font != null ? _font : (_font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
-
-        static void BuildHud(GameMgr gm)
+        /// <summary>Mockup background (dark navy) behind the board; the camera clears to the same tone.</summary>
+        static void ApplyBackground(UISkin skin)
         {
-            var canvasGo = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(GameHUD));
-            var canvas = canvasGo.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            var scaler = canvasGo.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1080, 2340);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0f;
-            var hud = canvasGo.GetComponent<GameHUD>();
+            var bg = GameObject.Find("Background");
+            if (bg != null && skin.background != null && bg.TryGetComponent(out SpriteRenderer sr))
+            {
+                sr.sprite = skin.background;
+                EditorUtility.SetDirty(sr);
+            }
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                cam.backgroundColor = CamBackground;
+                EditorUtility.SetDirty(cam);
+            }
+        }
+
+        // ------------------------------------------------------------------ lettering
+        /// <summary>The skin's font (a TTF/OTF in Art/Fonts), else Unity's built-in one.</summary>
+        internal static Font UIFont
+        {
+            get
+            {
+                var skin = AssetDatabase.LoadAssetAtPath<UISkin>(NewUISkinBuilder.SkinPath);
+                return skin != null && skin.font != null ? skin.font : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            }
+        }
+
+        /// <summary>
+        /// Swaps the HUD's lettering for the Art/Fonts pictures without moving anything: the LEVEL pills become
+        /// picture rows (<see cref="WordLabel"/>), the popup titles and the CONTINUE / home / try again buttons show
+        /// their word pictures, and every Text takes the skin's font when there is one. Safe to run again.
+        /// Menu: BallSort > Apply Word Art (also run by Rebuild HUD and Build Example Scene).
+        /// </summary>
+        [MenuItem("BallSort/Apply Word Art")]
+        public static void ApplyWordArt()
+        {
+            var hud = Object.FindFirstObjectByType<GameHUD>(FindObjectsInactive.Include);
+            if (hud == null)
+            {
+                Debug.LogWarning("Apply Word Art: no GameHUD in the open scene.");
+                return;
+            }
+            var skin = NewUISkinBuilder.BuildSkin();
+            Undo.RegisterFullObjectHierarchyUndo(hud.gameObject, "Apply Word Art");
+            ApplyWordArt(hud, skin);
+            EditorUtility.SetDirty(hud);
+            EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
+            EditorSceneManager.SaveOpenScenes();
+            Debug.Log("Apply Word Art: lettering pictures applied and the scene saved.");
+        }
+
+        internal static void ApplyWordArt(GameHUD hud, UISkin skin)
+        {
+            if (skin.font != null)
+                foreach (var t in hud.GetComponentsInChildren<Text>(true)) { t.font = skin.font; EditorUtility.SetDirty(t); }
+            if (hud.levelText != null) LevelLabel(hud.levelText, skin.wordLevel);
+            if (hud.mainMenu != null && hud.mainMenu.levelText != null) LevelLabel(hud.mainMenu.levelText, skin.wordLevel);
+            WordArt.Picture(hud.successTitle, skin.wordWellDone);
+            WordArt.Picture(ButtonLabel(hud.nextButton), skin.wordContinue);
+            WordArt.Picture(ButtonLabel(hud.noMoveContinueButton), skin.wordContinue);
+            WordArt.Picture(ButtonLabel(hud.noMoveHomeButton), skin.wordHome);
+            WordArt.Picture(ButtonLabel(hud.noMoveReplayButton), skin.wordTryAgain);
+            var loseTitle = hud.noMoveView != null ? hud.noMoveView.transform.Find("panel/title") : null;
+            if (loseTitle != null) WordArt.Picture(loseTitle.GetComponent<Text>(), skin.wordOutOfMoves);
+        }
+
+        static Text ButtonLabel(Button b)
+        {
+            var label = b != null ? b.transform.Find("label") : null;
+            return label != null ? label.GetComponent<Text>() : null;
+        }
+
+        /// <summary>
+        /// Turns a "LEVEL n" Text into a picture row (<see cref="WordLabel"/>): the LEVEL word picture, then the digit
+        /// pictures, the Text kept in the row as the fallback. Already converted texts are left alone.
+        /// </summary>
+        internal static WordLabel LevelLabel(Text text, Sprite word)
+        {
+            var existing = text.GetComponentInParent<WordLabel>(true);
+            if (existing != null)
+            {
+                if (existing.word != null) { existing.word.sprite = word; existing.word.rectTransform.sizeDelta = WordArt.Size(word); }
+                if (word != null) existing.digitHeight = WordArt.Size(word).y;
+                existing.Set(text.text, 1);
+                return existing;
+            }
+            var rt = text.rectTransform;
+            var row = MakeRect("label", rt.parent, rt.anchorMin, rt.anchorMax, rt.pivot, rt.anchoredPosition, rt.sizeDelta);
+            row.SetSiblingIndex(rt.GetSiblingIndex());
+            var group = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            group.childAlignment = TextAnchor.MiddleCenter;
+            group.spacing = 6f * WordArt.MockupScale;   // the gap between LEVEL and 1 in the export
+            group.childControlWidth = group.childControlHeight = false;
+            group.childForceExpandWidth = group.childForceExpandHeight = false;
+            var label = row.gameObject.AddComponent<WordLabel>();
+            label.row = row;
+            label.fallback = text;
+            var img = MakeImage(WordArt.PictureName, row, Center, Center, Center, Vector2.zero, WordArt.Size(word), word, Color.white, Image.Type.Simple);
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+            label.word = img;
+            if (word != null) label.digitHeight = WordArt.Size(word).y;
+            rt.SetParent(row, false);
+            rt.anchorMin = rt.anchorMax = rt.pivot = Center;
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = new Vector2(200f, 60f);
+            label.Set(text.text, 1);
+            return label;
+        }
+
+        // ------------------------------------------------------------------ HUD
+
+        /// <summary>Builds every HUD element under <paramref name="hud"/> and wires its fields.</summary>
+        internal static void FillHud(GameHUD hud, GameManager gm, UISkin skin)
+        {
             hud.game = gm;
-            var root = canvasGo.GetComponent<RectTransform>();
+            var root = (RectTransform)hud.transform;
+            if (gm != null)
+            {
+                gm.TopBarScreenFraction = 0.129f;    // LEVEL pill bottom: 301 of 2340 px (GameHUD measures the real value at runtime)
+                gm.BottomBarScreenFraction = 0.128f; // booster bar top: 300 of 2340 px
+                gm.BoardOffsetFactor = 0f;           // the board sits in the middle of the band between the bars
+                EditorUtility.SetDirty(gm);
+            }
 
-            // ---- top bar: height 172 anchored to the top (GameViewV3/content/game_top_bar)
-            var topBar = MakeRect("game_top_bar", root, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -86), new Vector2(0, 172));
+            // ---- top bar: restart left, LEVEL pill under the middle, settings right (the main menu opens from the settings page)
+            var topBar = MakeRect("top_bar", root, new Vector2(0, 1), new Vector2(1, 1), Center, new Vector2(0, -140), new Vector2(0, 280));
+            hud.resetButton = IconButton("btn - restart", topBar, new Vector2(0, 0.5f), new Vector2(121, 7), skin.buttonSquare, 146, skin.iconRestart, 100);
+            hud.settingsButton = IconButton("btn - settings", topBar, new Vector2(1, 0.5f), new Vector2(-121, 7), skin.buttonSquare, 146, skin.iconSettings, 100);
+            var levelBg = MakeImage("level_pill", topBar, Center, Center, Center, new Vector2(0, -103), new Vector2(300, 116), skin.buttonRect, Color.white, Image.Type.Sliced);
+            hud.levelText = MakeText("text", levelBg.rectTransform, Vector2.zero, Vector2.one, Center, new Vector2(0, 2), new Vector2(-24, 0), "LEVEL 1", 54, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+            AddShadow(hud.levelText.gameObject);
 
-            // reset button (left, x=97): dark circle 114 + exchange icon 88
-            var resetBtn = IconButton("btn - reset", topBar, new Vector2(0, 0.5f), new Vector2(97, 0), "ui_topbar_circle_114", Color.white, 114, "ic_restart", 88);
-            hud.resetButton = resetBtn;
-
-            // settings button (right, x=-97)
-            var settingsBtn = IconButton("btn - setting", topBar, new Vector2(1, 0.5f), new Vector2(-97, 0), "ui_topbar_circle_114", Color.white, 114, "ic_settings", 88);
-            hud.settingsButton = settingsBtn;
-
-            // level pill (middle): difficulity_normal 373x132 with the level text
-            var levelBg = MakeImage("difficulity_normal", topBar, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 0), new Vector2(373, 132), "ui_level_pill", Color.white, Image.Type.Sliced);
-            var levelText = MakeText("text", levelBg.rectTransform, new Vector2(0, 0.5f), new Vector2(1, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-24, 73), "Level 1", 62, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
-            hud.levelText = levelText;
-
-            // ---- settings panel: vertical strip under the settings button (GameViewV3/content/game_settings/buttons)
-            var settingsPanel = MakeRect("game_settings", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            var dim = MakeImage("bg", settingsPanel, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, null, new Color(0, 0, 0, 0.55f), Image.Type.Simple);
-            var dimBtn = dim.gameObject.AddComponent<Button>();
-            dimBtn.transition = Selectable.Transition.None;
-            var buttons = MakeRect("buttons", settingsPanel, new Vector2(1, 1), new Vector2(1, 1), new Vector2(0.5f, 0.5f), new Vector2(-97, -323), new Vector2(114, 588));
-            var settingClose = IconButton("btn - setting", buttons, new Vector2(0.5f, 1), new Vector2(0, -57), "ui_topbar_circle_114", Purple, 114, "ic_close", 60);
-            var homeBtn = IconButton("home_button", buttons, new Vector2(0.5f, 1), new Vector2(0, -215), "ui_circle_red_114", Color.white, 114, "ic_home", 88);
-            hud.settingsPanel = settingsPanel.gameObject;
-            hud.settingsCloseButton = settingClose;
-            hud.homeButton = homeBtn;
-            dimBtn.onClick.AddListener(() => settingsPanel.gameObject.SetActive(false));
-
-            // ---- bottom bar: y=240 from the bottom, height 168 (GameViewV3/Bottom)
-            var bottom = MakeRect("Bottom", root, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 240), new Vector2(0, 168));
-            hud.undoButton = BoosterButton("btn - undo", bottom, -268, "ic_undo", 120, out var undoCount, "5");
+            // ---- booster bar: pill panel at the bottom with undo / shuffle / add tube / little tube and the 'i' button
+            var bar = MakeImage("booster_bar", root, new Vector2(0.5f, 0), new Vector2(0.5f, 0), Center, new Vector2(0, 175), new Vector2(800, 250), skin.pill, Color.white, Image.Type.Sliced);
+            hud.undoButton = Booster("btn - undo", bar.transform, -270, skin, skin.iconUndo, out var undoCount, "5");
+            hud.shuffleButton = Booster("btn - shuffle", bar.transform, -90, skin, skin.iconShuffle, out _, null);
+            hud.addTubeButton = Booster("btn - add_tube", bar.transform, 90, skin, skin.iconAddTube, out var addCount, "1");
+            hud.smallTubeButton = Booster("btn - add_small_tube", bar.transform, 270, skin, skin.iconAddSmallTube, out var smallCount, "1");
             hud.undoCountText = undoCount;
-            hud.shuffleButton = BoosterButton("btn - shuffle", bottom, 0, "ic_shuffle", 120, out _, null);
-            hud.addTubeButton = BoosterButton("btn - add_tube", bottom, 268, "ic_add_tube", 120, out var addCount, "1");
             hud.addTubeCountText = addCount;
+            hud.smallTubeCountText = smallCount;
+            var info = MakeImage("btn - info", bar.transform, new Vector2(0, 1), new Vector2(0, 1), Center, new Vector2(26, -4), new Vector2(64, 64), skin.buttonCircle, Color.white, Image.Type.Simple);
+            hud.boosterInfoButton = info.gameObject.AddComponent<Button>();
+            hud.boosterInfoButton.targetGraphic = info;
+            MakeText("i", info.transform, Vector2.zero, Vector2.one, Center, new Vector2(0, 2), Vector2.zero, "i", 44, FontStyle.BoldAndItalic, TextAnchor.MiddleCenter, Color.white);
 
-            // ---- toast
-            var toast = MakeImage("toast", root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -420), new Vector2(840, 96), "ui_dark_pill", Color.white, Image.Type.Sliced);
+            // ---- booster info panel: above the bar, left; tapping it closes it
+            var infoPanel = MakeImage("booster_info", root, new Vector2(0.5f, 0), new Vector2(0.5f, 0), Center, new Vector2(-176, 600), new Vector2(453, 560), skin.pill, Color.white, Image.Type.Sliced);
+            infoPanel.gameObject.AddComponent<Button>().transition = Selectable.Transition.None;
+            var infoTitle = MakeText("title", infoPanel.transform, Center, Center, Center, new Vector2(0, 225), new Vector2(400, 60), "BOOSTERS", 44, FontStyle.Bold, TextAnchor.MiddleCenter, Navy);
+            AddShadow(infoTitle.gameObject, new Color(1f, 1f, 1f, 0.25f));
+            InfoRow(infoPanel.transform, 120, skin.iconUndo, "Undo your move");
+            InfoRow(infoPanel.transform, 20, skin.iconShuffle, "Shuffle your balls");
+            InfoRow(infoPanel.transform, -80, skin.iconAddTube, "Add a tube");
+            InfoRow(infoPanel.transform, -180, skin.iconAddSmallTube, "Add a little tube");
+            hud.boosterInfoPanel = infoPanel.gameObject;
+
+            // ---- toast: above the booster bar
+            var toast = MakeImage("toast", root, new Vector2(0.5f, 0), new Vector2(0.5f, 0), Center, new Vector2(0, 470), new Vector2(840, 96), skin.pill, Color.white, Image.Type.Sliced);
             hud.toast = toast.gameObject;
-            hud.toastText = MakeText("text", toast.rectTransform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-40, 0), "", 44, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+            hud.toastText = MakeText("text", toast.rectTransform, Vector2.zero, Vector2.one, Center, Vector2.zero, new Vector2(-40, 0), "", 44, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
 
-            // ---- SuccessView
-            var success = MakeRect("SuccessViewV3", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            MakeImage("dim", success, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, null, new Color(0.04f, 0.03f, 0.12f, 0.82f), Image.Type.Simple);
-            var wellDone = MakeText("Well Done!", success, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 420), new Vector2(938, 135), "Well Done!", 110, FontStyle.Bold, TextAnchor.MiddleCenter, new Color(1f, 0.87f, 0.3f));
-            AddShadow(wellDone.gameObject);
-            var nextBtn = TextButton("btn_next", success, new Vector2(0.5f, 0.5f), new Vector2(0, -520), new Vector2(680, 216), "ui_button_green", "Next", 92);
+            // ---- settings page: full-screen gradient, back arrow, three rows (button + striped level bar)
+            var settings = MakeRect("settings_view", root, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero);
+            MakeImage("bg", settings, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero, skin.settingsBackground, Color.white, Image.Type.Simple);
+            var back = MakeImage("btn - back", settings, new Vector2(0, 1), new Vector2(0, 1), Center, new Vector2(113, -105), new Vector2(110, 110), skin.iconUndo, Color.white, Image.Type.Simple);
+            back.preserveAspect = true;
+            back.rectTransform.localScale = new Vector3(-1f, 1f, 1f);   // the undo arrow, mirrored, is the mockup's back arrow
+            hud.settingsCloseButton = back.gameObject.AddComponent<Button>();
+            hud.settingsCloseButton.targetGraphic = back;
+            var view = settings.gameObject.AddComponent<SettingsView>();
+            view.haptic = SettingsRow(settings, 659, skin, skin.iconHaptic);
+            view.music = SettingsRow(settings, 133, skin, skin.iconMusic);
+            view.sound = SettingsRow(settings, -392, skin, skin.iconSound);
+            // MAIN MENU pill on the bottom edge of the settings page (the only way from the game back to the main menu)
+            hud.homeButton = PillButton("btn - main menu", settings, Vector2.zero, new Vector2(470, 162), skin.pill, "MAIN MENU", 56);
+            var menuRt = (RectTransform)hud.homeButton.transform;
+            menuRt.anchorMin = menuRt.anchorMax = new Vector2(0.5f, 0);
+            menuRt.anchoredPosition = new Vector2(0, 170);
+            hud.settingsPanel = settings.gameObject;
+
+            // ---- Well done: popup panel, title, big coin with star bursts, CONTINUE on the bottom edge
+            var success = MakeRect("SuccessView", root, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero);
+            MakeImage("dim", success, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero, null, Dim, Image.Type.Simple);
+            var winPanel = MakeImage("panel", success, Center, Center, Center, new Vector2(0, 60), new Vector2(776, 905), skin.popupPanel, Color.white, Image.Type.Sliced);
+            hud.successTitle = Title("title", winPanel.transform, new Vector2(0, 330), new Vector2(700, 100), "WELL DONE!", 64);
+            Decor("star_1", winPanel.transform, skin.rewardStar, new Vector2(-120, 250), 97);
+            Decor("star_2", winPanel.transform, skin.rewardStar, new Vector2(150, 190), 80);
+            Decor("coin", winPanel.transform, skin.coin, new Vector2(0, 100), 280);
+            Decor("star_3", winPanel.transform, skin.rewardStar, new Vector2(-130, -30), 150);
+            hud.nextButton = PillButton("btn - continue", winPanel.transform, new Vector2(0, -420), new Vector2(470, 162), skin.pill, "CONTINUE", 56);
             hud.successView = success.gameObject;
-            hud.successTitle = wellDone;
-            hud.nextButton = nextBtn;
 
-            // ---- NoMoveView
-            var noMove = MakeRect("NoMoveView", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            MakeImage("bg", noMove, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, null, new Color(0.04f, 0.03f, 0.12f, 0.86f), Image.Type.Simple);
-            var title = MakeText("Title", noMove, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -620), new Vector2(900, 120), "No more moves!", 92, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
-            AddShadow(title.gameObject);
-            var closeNoMove = IconButton("CloseNoMovePanelButton", noMove, new Vector2(1, 1), new Vector2(-100, -160), "ui_topbar_circle_114", Purple, 114, "ic_close", 60);
-            var replay = TextButton("ReplayButton", noMove, new Vector2(0.5f, 0), new Vector2(-250, 640), new Vector2(452, 174), "ui_button_green", "Replay", 70);
-            var playOn = TextButton("PlayOnButton", noMove, new Vector2(0.5f, 0), new Vector2(250, 640), new Vector2(452, 174), "ui_button_green", "Add Tube", 70);
-            var undoBtn2 = TextButton("UndoButton", noMove, new Vector2(0.5f, 0), new Vector2(0, 430), new Vector2(452, 150), "ui_dark_pill", "Undo", 64);
+            // ---- Out of moves: panel with the paid CONTINUE (coins, rewinds moves) in the middle, home / try again straddling its bottom corners
+            var noMove = MakeRect("NoMoveView", root, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero);
+            MakeImage("dim", noMove, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero, null, Dim, Image.Type.Simple);
+            var losePanel = MakeImage("panel", noMove, Center, Center, Center, new Vector2(0, 40), new Vector2(776, 700), skin.pill, Color.white, Image.Type.Sliced);
+            Title("title", losePanel.transform, new Vector2(0, 150), new Vector2(700, 100), "OUT OF MOVES :(", 64);
+            hud.noMoveContinueButton = PillButton("btn - continue", losePanel.transform, new Vector2(0, -40), new Vector2(560, 160), skin.buttonRectGreen != null ? skin.buttonRectGreen : skin.pill, "CONTINUE", 50);
+            hud.noMoveContinueCostText = CoinPrice(hud.noMoveContinueButton, skin, hud.continueCost);
+            var continueColors = hud.noMoveContinueButton.colors; continueColors.disabledColor = new Color(1, 1, 1, 0.45f); hud.noMoveContinueButton.colors = continueColors;
+            hud.noMoveHomeButton = PillButton("btn - home", losePanel.transform, new Vector2(-270, -270), new Vector2(404, 150), skin.pill, "home", 52);
+            hud.noMoveReplayButton = PillButton("btn - try_again", losePanel.transform, new Vector2(270, -270), new Vector2(404, 150), skin.pill, "try again", 52);
             hud.noMoveView = noMove.gameObject;
-            hud.noMoveReplayButton = replay;
-            hud.noMoveAddTubeButton = playOn;
-            hud.noMoveUndoButton = undoBtn2;
-            hud.noMoveCloseButton = closeNoMove;
+            hud.noMoveUndoButton = null;
+            hud.noMoveAddTubeButton = null;
+            hud.noMoveCloseButton = null;
 
-            settingsPanel.gameObject.SetActive(false);
+            infoPanel.gameObject.SetActive(false);
             toast.gameObject.SetActive(false);
+            settings.gameObject.SetActive(false);
             success.gameObject.SetActive(false);
             noMove.gameObject.SetActive(false);
+            EditorUtility.SetDirty(hud);
         }
 
         // ------------------------------------------------------------------ UI helpers
-        static RectTransform MakeRect(string name, Transform parent, Vector2 amin, Vector2 amax, Vector2 pivot, Vector2 pos, Vector2 size)
+        internal static RectTransform MakeRect(string name, Transform parent, Vector2 amin, Vector2 amax, Vector2 pivot, Vector2 pos, Vector2 size)
         {
             var go = new GameObject(name, typeof(RectTransform));
             var rt = go.GetComponent<RectTransform>();
@@ -268,18 +445,18 @@ namespace BallSortGame.EditorTools
             return rt;
         }
 
-        static Image MakeImage(string name, Transform parent, Vector2 amin, Vector2 amax, Vector2 pivot, Vector2 pos, Vector2 size, string spriteName, Color color, Image.Type type)
+        internal static Image MakeImage(string name, Transform parent, Vector2 amin, Vector2 amax, Vector2 pivot, Vector2 pos, Vector2 size, Sprite sprite, Color color, Image.Type type)
         {
             var rt = MakeRect(name, parent, amin, amax, pivot, pos, size);
             var img = rt.gameObject.AddComponent<Image>();
-            if (!string.IsNullOrEmpty(spriteName)) img.sprite = LoadSprite(ArtUI + spriteName + ".png");
+            img.sprite = sprite;
             img.color = color;
             img.type = type;
             img.raycastTarget = true;
             return img;
         }
 
-        static Text MakeText(string name, Transform parent, Vector2 amin, Vector2 amax, Vector2 pivot, Vector2 pos, Vector2 size, string text, int fontSize, FontStyle style, TextAnchor anchor, Color color)
+        internal static Text MakeText(string name, Transform parent, Vector2 amin, Vector2 amax, Vector2 pivot, Vector2 pos, Vector2 size, string text, int fontSize, FontStyle style, TextAnchor anchor, Color color)
         {
             var rt = MakeRect(name, parent, amin, amax, pivot, pos, size);
             var t = rt.gameObject.AddComponent<Text>();
@@ -295,50 +472,113 @@ namespace BallSortGame.EditorTools
             return t;
         }
 
-        static void AddShadow(GameObject go)
+        internal static void AddShadow(GameObject go) => AddShadow(go, new Color(0, 0, 0, 0.6f));
+
+        internal static void AddShadow(GameObject go, Color color)
         {
             var s = go.AddComponent<Shadow>();
-            s.effectColor = new Color(0, 0, 0, 0.6f);
-            s.effectDistance = new Vector2(0, -6);
+            s.effectColor = color;
+            s.effectDistance = new Vector2(0, -5);
         }
 
-        static Button IconButton(string name, Transform parent, Vector2 anchor, Vector2 pos, string bgSprite, Color bgColor, float bgSize, string iconSprite, float iconSize)
+        /// <summary>Gold popup title with the navy outline of the mockups.</summary>
+        internal static Text Title(string name, Transform parent, Vector2 pos, Vector2 size, string text, int fontSize)
         {
-            var bg = MakeImage(name, parent, anchor, anchor, new Vector2(0.5f, 0.5f), pos, new Vector2(bgSize, bgSize), bgSprite, bgColor, Image.Type.Simple);
-            var btn = bg.gameObject.AddComponent<Button>();
-            btn.targetGraphic = bg;
-            var icon = MakeImage("img - " + iconSprite, bg.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(iconSize, iconSize), iconSprite, TopBarIcon, Image.Type.Simple);
-            icon.preserveAspect = true;
-            icon.raycastTarget = false;
+            var t = MakeText(name, parent, Center, Center, Center, pos, size, text, fontSize, FontStyle.Bold, TextAnchor.MiddleCenter, Gold);
+            var o = t.gameObject.AddComponent<Outline>();
+            o.effectColor = Navy;
+            o.effectDistance = new Vector2(4, -4);
+            AddShadow(t.gameObject);
+            return t;
+        }
+
+        /// <summary>Non-interactive picture centred at <paramref name="pos"/>.</summary>
+        internal static Image Decor(string name, Transform parent, Sprite sprite, Vector2 pos, float size)
+        {
+            var img = MakeImage(name, parent, Center, Center, Center, pos, new Vector2(size, size), sprite, Color.white, Image.Type.Simple);
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+            return img;
+        }
+
+        internal static Button IconButton(string name, Transform parent, Vector2 anchor, Vector2 pos, Sprite bg, float bgSize, Sprite icon, float iconSize, bool sliced = true)
+        {
+            var img = MakeImage(name, parent, anchor, anchor, Center, pos, new Vector2(bgSize, bgSize), bg, Color.white, sliced ? Image.Type.Sliced : Image.Type.Simple);
+            var btn = img.gameObject.AddComponent<Button>();
+            btn.targetGraphic = img;
+            var iconImg = Decor("icon", img.transform, icon, new Vector2(0, 4), iconSize);
+            iconImg.name = "img - icon";
             return btn;
         }
 
-        /// <summary>Bottom-bar booster: 168x168 purple round rect, 120 icon, red count badge at (74,-72) (reference btn - undo).</summary>
-        static Button BoosterButton(string name, Transform parent, float x, string iconSprite, float iconSize, out Text countText, string count)
+        /// <summary>Booster bar button: 146 square, 100 icon, red count badge at the top right corner.</summary>
+        static Button Booster(string name, Transform parent, float x, UISkin skin, Sprite icon, out Text countText, string count)
         {
-            var bg = MakeImage(name, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(x, 0), new Vector2(168, 168), "ui_round_rect_168", Purple, Image.Type.Sliced);
-            var btn = bg.gameObject.AddComponent<Button>();
-            btn.targetGraphic = bg;
+            var btn = IconButton(name, parent, Center, new Vector2(x, 0), skin.buttonSquare, 146, icon, 100);
             var colors = btn.colors; colors.disabledColor = new Color(1, 1, 1, 0.45f); btn.colors = colors;
-            var icon = MakeImage("img - " + iconSprite, bg.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 2), new Vector2(iconSize, iconSize), iconSprite, Color.white, Image.Type.Simple);
-            icon.preserveAspect = true;
-            icon.raycastTarget = false;
             countText = null;
             if (count != null)
             {
-                var badge = MakeImage("count_badge", bg.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(74, 72), new Vector2(64, 64), "ui_badge_red", Color.white, Image.Type.Simple);
+                var badge = MakeImage("count_badge", btn.transform, Center, Center, Center, new Vector2(58, 58), new Vector2(56, 56), skin.redCircle, Color.white, Image.Type.Simple);
                 badge.raycastTarget = false;
-                countText = MakeText("count", badge.transform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(0, 2), Vector2.zero, count, 40, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+                countText = MakeText("count", badge.transform, Vector2.zero, Vector2.one, Center, new Vector2(0, 2), Vector2.zero, count, 34, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             }
             return btn;
         }
 
-        static Button TextButton(string name, Transform parent, Vector2 anchor, Vector2 pos, Vector2 size, string bgSprite, string label, int fontSize)
+        static void InfoRow(Transform parent, float y, Sprite icon, string label)
         {
-            var bg = MakeImage(name, parent, anchor, anchor, new Vector2(0.5f, 0.5f), pos, size, bgSprite, Color.white, Image.Type.Sliced);
-            var btn = bg.gameObject.AddComponent<Button>();
-            btn.targetGraphic = bg;
-            var t = MakeText("label", bg.transform, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), new Vector2(0, 4), new Vector2(-40, 0), label, fontSize, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
+            Decor("icon", parent, icon, new Vector2(-150, y), 76);
+            var t = MakeText("label", parent, Center, Center, Center, new Vector2(50, y), new Vector2(300, 60), label, 34, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
+            AddShadow(t.gameObject);
+        }
+
+        /// <summary>Settings row: 372 square button with its icon, striped level bar (a Slider) 227 below it.</summary>
+        static SettingsView.Row SettingsRow(Transform parent, float y, UISkin skin, Sprite icon)
+        {
+            var row = new SettingsView.Row();
+            var b = MakeImage("btn", parent, Center, Center, Center, new Vector2(0, y), new Vector2(372, 372), skin.buttonSquare, Color.white, Image.Type.Sliced);
+            row.button = b.gameObject.AddComponent<Button>();
+            row.button.targetGraphic = b;
+            row.icon = Decor("img - icon", b.transform, icon, new Vector2(0, 8), 230);
+
+            var track = MakeImage("bar", parent, Center, Center, Center, new Vector2(0, y - 227), new Vector2(646, 81), skin.settingsBar, new Color(1f, 1f, 1f, 0.3f), Image.Type.Simple);
+            var fill = MakeImage("fill", track.transform, Vector2.zero, Vector2.one, Center, Vector2.zero, Vector2.zero, skin.settingsBar, Color.white, Image.Type.Filled);
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = 0;
+            fill.raycastTarget = false;
+            var slider = track.gameObject.AddComponent<Slider>();
+            slider.transition = Selectable.Transition.None;
+            slider.fillRect = fill.rectTransform;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.value = 1f;
+            row.slider = slider;
+            return row;
+        }
+
+        /// <summary>
+        /// Turns a pill button into a two-line price button: the label moves up, and "900 x [coin]" sits under it.
+        /// Returns the price text, so the HUD can keep it in sync with its cost field.
+        /// </summary>
+        static Text CoinPrice(Button btn, UISkin skin, int price)
+        {
+            var label = btn.transform.Find("label") as RectTransform;
+            if (label != null) { label.anchoredPosition = new Vector2(0, 34); }
+            var row = MakeRect("price", btn.transform, Center, Center, Center, new Vector2(0, -32), new Vector2(300, 60));
+            var t = MakeText("cost", row, Center, Center, new Vector2(1f, 0.5f), new Vector2(18, 2), new Vector2(200, 60), price + " x", 44, FontStyle.Bold, TextAnchor.MiddleRight, Color.white);
+            AddShadow(t.gameObject);
+            Decor("coin", row, skin.coin, new Vector2(58, 0), 64).raycastTarget = false;
+            return t;
+        }
+
+        internal static Button PillButton(string name, Transform parent, Vector2 pos, Vector2 size, Sprite bg, string label, int fontSize)
+        {
+            var img = MakeImage(name, parent, Center, Center, Center, pos, size, bg, Color.white, Image.Type.Sliced);
+            var btn = img.gameObject.AddComponent<Button>();
+            btn.targetGraphic = img;
+            var t = MakeText("label", img.transform, Vector2.zero, Vector2.one, Center, new Vector2(0, 4), new Vector2(-30, 0), label, fontSize, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             AddShadow(t.gameObject);
             return btn;
         }

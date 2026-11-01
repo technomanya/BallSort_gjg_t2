@@ -7,7 +7,7 @@ namespace BallSortGame.Core
 {
     /// <summary>
     /// Level pack format of the reference game ("StageData" JSON under Resources/data/):
-    /// { "stage_id": "lv_1_100", "levels": [ { "puzzle_id": "...", "tubes": [[top..bottom], ...], "steps": [[from,to],...] } ] }
+    /// { "stage_id": "levels", "levels": [ { "puzzle_id": "...", "tubes": [[top..bottom], ...], "steps": [[from,to],...] } ] }
     /// Tubes are listed TOP-first, 0 = empty slot, colors 1..N. Capacity = array length.
     /// </summary>
     [Serializable]
@@ -23,6 +23,19 @@ namespace BallSortGame.Core
         [JsonProperty("puzzle_id")] public string PuzzleId;
         [JsonProperty("tubes")] public List<List<int>> Tubes = new List<List<int>>();
         [JsonProperty("steps")] public List<List<int>> Steps = new List<List<int>>();
+        /// <summary>Per-tube <see cref="TubeKind"/> (0 normal, 1 in-only, 2 out-only, 4 hidden); absent = every tube normal.</summary>
+        [JsonProperty("tube_kinds", NullValueHandling = NullValueHandling.Ignore)] public List<int> TubeKinds;
+        /// <summary>
+        /// Hidden balls, parallel to <see cref="Tubes"/> (top-first, 1 = the ball's colour is hidden until it becomes the
+        /// top ball of its tube); absent = every ball visible. The level editor's "?" cells.
+        /// </summary>
+        [JsonProperty("hidden", NullValueHandling = NullValueHandling.Ignore)] public List<List<int>> Hidden;
+        /// <summary>
+        /// Heavy balls (the cannonball obstacle), one flag per tube: 1 = the bottom ball of that tube is heavy. A heavy
+        /// ball is a normal coloured ball that only ever sits at the bottom, so it only moves into an empty tube.
+        /// Absent = no heavy ball.
+        /// </summary>
+        [JsonProperty("heavy", NullValueHandling = NullValueHandling.Ignore)] public List<int> Heavy;
 
         // ---- optional fields written by the level generator (absent in the reference packs) ----
         /// <summary>Difficulty bucket 1..7 (Magic Sort bot scale) of this fill.</summary>
@@ -53,6 +66,30 @@ namespace BallSortGame.Core
             return SeedAt(i);
         }
 
+        public TubeKind KindOf(int tube) => TubeKinds != null && tube < TubeKinds.Count ? (TubeKind)TubeKinds[tube] : TubeKind.Normal;
+
+        /// <summary>Whether the ball at <paramref name="topFirstIndex"/> of <paramref name="tube"/> starts hidden.</summary>
+        public bool IsHidden(int tube, int topFirstIndex) =>
+            Hidden != null && tube < Hidden.Count && Hidden[tube] != null && topFirstIndex < Hidden[tube].Count && Hidden[tube][topFirstIndex] != 0;
+
+        /// <summary>Whether the bottom ball of <paramref name="tube"/> is heavy.</summary>
+        public bool IsHeavyBottom(int tube) => Heavy != null && tube < Heavy.Count && Heavy[tube] != 0;
+
+        [JsonIgnore] public bool HasHeavyBalls
+        {
+            get { if (Heavy == null) return false; foreach (var h in Heavy) if (h != 0) return true; return false; }
+        }
+
+        [JsonIgnore] public bool HasHiddenBalls
+        {
+            get
+            {
+                if (Hidden == null) return false;
+                foreach (var t in Hidden) if (t != null) foreach (var h in t) if (h != 0) return true;
+                return false;
+            }
+        }
+
         [JsonIgnore] public int Capacity
         {
             get { int c = 0; foreach (var t in Tubes) c = Mathf.Max(c, t.Count); return c; }
@@ -72,13 +109,13 @@ namespace BallSortGame.Core
         {
             var tubes = new List<IList<int>>(Tubes.Count);
             foreach (var t in Tubes) tubes.Add(t);
-            return BoardState.FromTopFirst(tubes);
+            return BoardState.FromTopFirst(tubes, TubeKinds, Heavy);
         }
     }
 
     public static class LevelLoader
     {
-        /// <summary>Loads a stage file from Resources (e.g. "data/lv_1_100").</summary>
+        /// <summary>Loads a stage file from Resources (e.g. "data/levels").</summary>
         public static StageData LoadStage(string resourcePath)
         {
             var text = Resources.Load<TextAsset>(resourcePath);

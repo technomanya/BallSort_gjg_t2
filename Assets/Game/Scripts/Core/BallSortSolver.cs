@@ -125,10 +125,11 @@ namespace BallSortGame.Core
                     if (count <= 0) continue;
 
                     bool toEmpty = s.IsEmpty(to);
-                    // pure relocation: whole uniform tube -> empty tube changes nothing
-                    if (toEmpty && fromUniform && count == s.Count(from)) continue;
-                    // all empty tubes are equivalent: only try the first one
-                    if (toEmpty)
+                    bool plain = s.IsPlainEmpty(to) && s.KindOf(from) == TubeKind.Normal;
+                    // pure relocation: whole uniform tube -> empty tube changes nothing (unless a special tube is involved)
+                    if (plain && fromUniform && count == s.Count(from)) continue;
+                    // all plain empty tubes are equivalent: only try the first one
+                    if (plain)
                     {
                         if (seenEmptyTarget) continue;
                         seenEmptyTarget = true;
@@ -138,7 +139,7 @@ namespace BallSortGame.Core
 
                     int score;
                     if (!toEmpty && s.TopColor(to) == topColor)
-                        score = (s.Count(to) + count >= s.Capacity ? 150 : 50) + count;
+                        score = (s.Count(to) + count >= s.CapacityOf(to) ? 150 : 50) + count;
                     else if (toEmpty)
                         score = count + 10;
                     else

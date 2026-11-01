@@ -5,6 +5,7 @@ namespace BallSortGame.Core
 {
     /// <summary>
     /// Random fill of a <see cref="LevelDesign"/>: places the remaining balls of every colour into the luck slots.
+    /// Fixed cells are copied as they are; a tube's heavy-bottom flag is carried over to the board.
     /// Deterministic for a given (design, seed) pair, so a seed number identifies a concrete level like the
     /// "_difficultyD-K" variants of the Magic Sort pipeline.
     /// </summary>
@@ -39,13 +40,16 @@ namespace BallSortGame.Core
                 for (int t = 0; t < design.TubeCount; t++)
                 {
                     var spec = design.Tubes[t];
+                    board.SetKind(t, spec.Kind);
                     int fill = spec.EffectiveFillCount;
                     for (int s = 0; s < fill; s++)
                     {
                         int f = spec.FixedAt(s);
                         board.Push(t, f != 0 ? (byte)f : bag[next++]);
                     }
+                    board.SetHeavy(t, spec.Heavy);
                 }
+                board.OpenHiddenTubes();
 
                 if (!rejectSolvedTubes || attempt >= maxRerolls) return board;
                 bool bad = board.IsWin();

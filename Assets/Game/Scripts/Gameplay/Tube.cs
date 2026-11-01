@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using BallSortGame.Core;
 using UnityEngine;
 
 namespace BallSortGame.Gameplay
@@ -12,17 +13,25 @@ namespace BallSortGame.Gameplay
     [RequireComponent(typeof(SpriteRenderer), typeof(BoxCollider2D))]
     public class Tube : MonoBehaviour
     {
-        [Header("Skin (set by GameMgr)")]
+        [Header("Skin (set by GameManager)")]
         public float TubeWidth = 1.81f;
         public float TubeHeight = 4.8f;
         public float FirstBallY = -1.79f;   // local y of the bottom ball center
         public float BallPitch = 1.08f;     // distance between stacked ball centers
         public float LiftY = 3.05f;         // local y of a lifted (selected) ball center
-        [Tooltip("Free world units above the lifted ball (set by GameMgr per row); flight arcs may rise this high.")]
+        [Tooltip("Free world units above the lifted ball (set by GameManager per row); flight arcs may rise this high.")]
         public float ArcHeadroom = 2f;
 
         public int Index { get; private set; }
         public int Capacity { get; private set; }
+        /// <summary>Normal, InOnly (balls go in, never out), OutOnly (balls come out, never in) or Hidden (covered until it opens).</summary>
+        public TubeKind Kind { get; private set; } = TubeKind.Normal;
+        public bool IsInOnly => Kind == TubeKind.InOnly;
+        public bool IsOutOnly => Kind == TubeKind.OutOnly;
+        /// <summary>The booster's little tube: one ball, never a finished tube.</summary>
+        public bool IsSpare => Kind == TubeKind.Spare;
+        /// <summary>Still covered: no ball goes in or out until a neighbouring tube is completed (see <see cref="Open"/>).</summary>
+        public bool IsHiddenTube => Kind == TubeKind.Hidden;
         public IReadOnlyList<Ball> Balls => _balls;
         public int Count => _balls.Count;
         public bool IsEmpty => _balls.Count == 0;
@@ -30,16 +39,40 @@ namespace BallSortGame.Gameplay
         public bool IsSelected { get; private set; }
         public Ball TopBall => _balls.Count == 0 ? null : _balls[_balls.Count - 1];
 
-        /// <summary>Number of same-colored balls at the top.</summary>
+        /// <summary>
+        /// Number of same-colored balls at the top. A hidden ball ends the run (its colour is not known yet), and so
+        /// does a heavy ball under the run (it never leaves the bottom with it).
+        /// </summary>
         public int TopBallSameCount
         {
             get
             {
                 if (_balls.Count == 0) return 0;
                 int c = TopBall.ColorIndex, n = 1;
-                for (int i = _balls.Count - 2; i >= 0 && _balls[i].ColorIndex == c; i--) n++;
+                for (int i = _balls.Count - 2; i >= 0 && _balls[i].ColorIndex == c && !_balls[i].IsHidden && !_balls[i].IsHeavy; i--) n++;
                 return n;
             }
+        }
+
+        /// <summary>The bottom ball is heavy.</summary>
+        public bool IsHeavyBottom => _balls.Count > 0 && _balls[0].IsHeavy;
+
+        /// <summary>Any ball whose colour is still hidden.</summary>
+        public bool HasHiddenBall
+        {
+            get { foreach (var b in _balls) if (b.IsHidden) return true; return false; }
+        }
+
+        /// <summary>The top ball is always visible: call after balls left the tube (and when the level starts).</summary>
+        public void RevealTop()
+        {
+            if (_balls.Count > 0) _balls[_balls.Count - 1].Reveal();
+        }
+
+        /// <summary>Shows every ball (a completed tube has nothing left to hide).</summary>
+        public void RevealAll()
+        {
+            foreach (var b in _balls) b.Reveal();
         }
 
         public bool IsUniform
@@ -53,8 +86,11 @@ namespace BallSortGame.Gameplay
             }
         }
 
-        /// <summary>Full and one color.</summary>
-        public bool IsCompleted => IsFull && IsUniform;
+        /// <summary>Full and one color. The little (spare) tube is never completed: it is only a parking spot. Nor is a covered tube.</summary>
+        public bool IsCompleted => !IsSpare && !IsHiddenTube && IsFull && IsUniform;
+
+        /// <summary>Only the heavy ball is left in the tube: the one state in which it can move (into an empty tube).</summary>
+        public bool IsHeavyOnly => _balls.Count == 1 && _balls[0].IsHeavy;
 
         /// <summary>Reference IsIdentical: empty counts as identical.</summary>
         public bool IsIdentical => IsEmpty || IsCompleted;
@@ -67,6 +103,13 @@ namespace BallSortGame.Gameplay
         Coroutine _shake;
         SpriteRenderer _sr;
         BoxCollider2D _col;
+        SpriteRenderer _badge;
+        SpriteRenderer _cover;
+
+        const float BadgeSize = 0.7f;       // world units; the arrow sprite is 1 unit at 100 ppu
+        const float BadgeGap = 0.12f;       // space between the glass bottom and the badge
+        const int CoverOrderAbove = 3;      // the cover sorts above the glass, the balls and their "?" marks
+        const float OpenDuration = 0.4f;
 
         public void Setup(int index, int capacity, Sprite tubeSprite, int sortingOrder)
         {
@@ -77,9 +120,113 @@ namespace BallSortGame.Gameplay
             _sr.sprite = tubeSprite;
             _sr.sortingOrder = sortingOrder;
             // click area: the tube plus the space above it where lifted balls sit
-            _col.size = new Vector2(TubeWidth + 0.3f, TubeHeight + 1.6f);
-            _col.offset = new Vector2(0f, 0.8f);
+            float bottom = -TubeHeight / 2f;
+            float top = Mathf.Max(TubeHeight / 2f + 1.6f, LiftY + 0.95f);
+            _col.size = new Vector2(TubeWidth + 0.3f, top - bottom);
+            _col.offset = new Vector2(0f, (top + bottom) / 2f);
             name = $"Tube_{index}";
+        }
+
+        /// <summary>
+        /// Sets the one-way rule and shows it with an arrow under the glass: pointing up for out-only
+        /// (balls leave), pointing down for in-only (balls enter). <paramref name="arrow"/> points up.
+        /// A hidden tube wears <paramref name="cover"/> (Art/Tubes/Hidden tube) over the glass instead.
+        /// </summary>
+        public void SetKind(TubeKind kind, Sprite arrow, Sprite cover = null)
+        {
+            Kind = kind;
+            SetCover(kind == TubeKind.Hidden, cover);
+            if (kind == TubeKind.Normal || kind == TubeKind.Spare || kind == TubeKind.Hidden)
+            {
+                if (_badge != null) _badge.gameObject.SetActive(false);
+                return;
+            }
+            if (_badge == null)
+            {
+                var go = new GameObject("kind_badge", typeof(SpriteRenderer));
+                go.transform.SetParent(transform, false);
+                _badge = go.GetComponent<SpriteRenderer>();
+                _badge.sortingOrder = (_sr != null ? _sr.sortingOrder : 3) + 1;
+            }
+            _badge.gameObject.SetActive(true);
+            _badge.sprite = arrow;
+            _badge.color = Color.white;
+            _badge.flipY = kind == TubeKind.InOnly;
+            float h = arrow != null ? arrow.bounds.size.y : 1f;
+            float scale = h > 0f ? BadgeSize / h : 1f;
+            _badge.transform.localScale = new Vector3(scale, scale, 1f);
+            _badge.transform.localPosition = new Vector3(0f, -TubeHeight / 2f - BadgeGap - BadgeSize / 2f, 0f);
+        }
+
+        void SetCover(bool on, Sprite cover)
+        {
+            if (!on)
+            {
+                if (_cover != null) _cover.gameObject.SetActive(false);
+                return;
+            }
+            if (_cover == null)
+            {
+                var go = new GameObject("hidden_cover", typeof(SpriteRenderer));
+                go.transform.SetParent(transform, false);
+                _cover = go.GetComponent<SpriteRenderer>();
+            }
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            _cover.gameObject.SetActive(true);
+            _cover.sortingOrder = _sr.sortingOrder + CoverOrderAbove;
+            // without the art: the glass itself, tinted leaf green
+            _cover.sprite = cover != null ? cover : _sr.sprite;
+            _cover.color = cover != null ? Color.white : new Color(0.25f, 0.55f, 0.42f, 1f);
+            // same height and centre as the glass
+            var glass = _sr.sprite != null ? _sr.sprite.bounds : new Bounds(Vector3.zero, new Vector3(TubeWidth, TubeHeight, 0f));
+            float h = _cover.sprite != null ? _cover.sprite.bounds.size.y : 1f;
+            float scale = h > 0f ? glass.size.y / h : 1f;
+            _cover.transform.localScale = new Vector3(scale, scale, 1f);
+            Vector3 c = _cover.sprite != null ? _cover.sprite.bounds.center * scale : Vector3.zero;
+            _cover.transform.localPosition = new Vector3(glass.center.x - c.x, glass.center.y - c.y, 0f);
+        }
+
+        /// <summary>Level editor preview: a see-through cover, so the designer can still paint the balls under it.</summary>
+        public void SetCoverAlpha(float alpha)
+        {
+            if (_cover == null) return;
+            var c = _cover.color;
+            c.a = alpha;
+            _cover.color = c;
+        }
+
+        /// <summary>
+        /// Opens a hidden tube for good (a neighbouring tube was completed): it plays as a normal tube from now on and
+        /// the cover fades away. Returns false when the tube was not hidden.
+        /// </summary>
+        public bool Open(bool animate = true)
+        {
+            if (!IsHiddenTube) return false;
+            Kind = TubeKind.Normal;
+            RevealTop();
+            if (_cover == null) return true;
+            if (animate && isActiveAndEnabled) StartCoroutine(OpenRoutine());
+            else _cover.gameObject.SetActive(false);
+            return true;
+        }
+
+        IEnumerator OpenRoutine()
+        {
+            var tr = _cover.transform;
+            Vector3 s = tr.localScale;
+            Color c = _cover.color;
+            float t = 0f;
+            while (t < OpenDuration)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.Clamp01(t / OpenDuration);
+                tr.localScale = s * (1f + 0.15f * k);
+                _cover.color = new Color(c.r, c.g, c.b, c.a * (1f - k * k));
+                yield return null;
+            }
+            _cover.gameObject.SetActive(false);
+            tr.localScale = s;
+            _cover.color = c;
         }
 
         public Vector3 SlotLocalPos(int slot) => new Vector3(0f, FirstBallY + slot * BallPitch, 0f);
@@ -132,10 +279,20 @@ namespace BallSortGame.Gameplay
 
         // ---------- rules ----------
 
-        /// <summary>Reference TubeData.CanImport(source): empty target accepts anything; otherwise not full and same top color.</summary>
+        /// <summary>True when balls may be taken out of this tube at all (not empty, not in-only, not hidden).</summary>
+        public bool CanExport => !IsEmpty && !IsInOnly && !IsHiddenTube;
+
+        /// <summary>
+        /// Reference TubeData.CanImport(source): empty target accepts anything; otherwise not full and same top color.
+        /// One-way tubes: nothing leaves an in-only source, nothing enters an out-only target. A hidden tube does neither.
+        /// Heavy balls: a heavy ball (alone in its tube, else it is not the top) only goes into an empty tube.
+        /// Mirrors <see cref="BoardState.CanImport"/>.
+        /// </summary>
         public bool CanImport(Tube source)
         {
-            if (source == null || source == this || source.IsEmpty) return false;
+            if (source == null || source == this || !source.CanExport) return false;
+            if (IsOutOnly || IsHiddenTube) return false;
+            if (source.IsHeavyOnly) return IsEmpty;
             if (IsEmpty) return true;
             if (IsFull) return false;
             return source.TopBall.ColorIndex == TopBall.ColorIndex;
@@ -158,8 +315,9 @@ namespace BallSortGame.Gameplay
                 source._balls.RemoveAt(source._balls.Count - 1);
                 moving.Add(b);
             }
-            // any remaining lifted balls of the source drop back
+            // any remaining lifted balls of the source drop back; the new top ball shows its colour
             for (int i = 0; i < source._balls.Count; i++) source._balls[i].SnapTo(source.SlotWorldPos(i));
+            source.RevealTop();
 
             int remaining = n;
             for (int i = 0; i < n; i++)
@@ -203,6 +361,7 @@ namespace BallSortGame.Gameplay
                     if (remaining == 0) onDone?.Invoke();
                 });
             }
+            RevealTop();   // what is uncovered by the undo stays known
         }
 
         // ---------- feedback ----------

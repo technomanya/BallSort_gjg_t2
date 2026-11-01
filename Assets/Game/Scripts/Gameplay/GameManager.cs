@@ -72,8 +72,10 @@ namespace BallSortGame.Gameplay
         public float HorizontalMargin = 0.35f;
         [Tooltip("Fraction of the camera's vertical half-size the board is shifted down to leave room for the top bar.")]
         public float BoardOffsetFactor = -0.05f;
-        [Tooltip("Screen height fraction covered by the HUD top bar (172 of 2340 px in the reference layout); flight arcs stay below it.")]
-        public float TopBarScreenFraction = 0.075f;
+        [Tooltip("Screen height fraction covered by the HUD top bar (down to the LEVEL pill's bottom edge: 301 of 2340 px in the reference layout); flight arcs stay below it. The HUD measures the real value at runtime (SetHudBands).")]
+        public float TopBarScreenFraction = 0.129f;
+        [Tooltip("Screen height fraction covered by the HUD booster bar (300 of 2340 px in the reference layout). The HUD measures the real value at runtime (SetHudBands).")]
+        public float BottomBarScreenFraction = 0.128f;
         [Tooltip("Extra world units kept between the highest point of a flight arc and whatever is above it.")]
         public float ArcSafetyMargin = 0.15f;
         /// <summary>Lower bound for the fitted camera size; the level editor raises it so its controls stay clear of the board. Not saved.</summary>
@@ -168,34 +170,18 @@ namespace BallSortGame.Gameplay
         void Update()
         {
             if (_isPause || _gameOver || IsBotPlaying) return;
-            if (!Input.GetMouseButtonDown(0)) return;
+            if (!PointerInput.Down) return;
             if (IsPointerOverUi()) return;
 
-            Vector3 wp = cam.ScreenToWorldPoint(Input.mousePosition);
+            Vector3 wp = cam.ScreenToWorldPoint(PointerInput.Position);
             var hit = Physics2D.OverlapPoint(new Vector2(wp.x, wp.y));
             if (hit == null) return;
             var tube = hit.GetComponent<Tube>();
             if (tube != null) OnTubeClick(tube);
         }
 
-        /// <summary>
-        /// True when the tap that is being handled landed on UI. With a touch the EventSystem is asked about that finger:
-        /// the parameterless <see cref="EventSystem.IsPointerOverGameObject()"/> is the mouse pointer, which on Android
-        /// (and so in emulators such as BlueStacks) is only refreshed on frames without a touch, so it still reports the
-        /// UI button of the previous tap when the next tap starts on the board.
-        /// </summary>
-        public static bool IsPointerOverUi()
-        {
-            var es = EventSystem.current;
-            if (es == null) return false;
-            if (Input.touchCount > 0)
-            {
-                for (int i = 0; i < Input.touchCount; i++)
-                    if (es.IsPointerOverGameObject(Input.GetTouch(i).fingerId)) return true;
-                return false;
-            }
-            return es.IsPointerOverGameObject();
-        }
+        /// <summary>True when the tap that is being handled landed on UI (see <see cref="PointerInput.IsOverUi"/>).</summary>
+        public static bool IsPointerOverUi() => PointerInput.IsOverUi();
 
         // =====================================================================
         // Level lifecycle
@@ -451,6 +437,22 @@ namespace BallSortGame.Gameplay
             return rowWidth;
         }
 
+        /// <summary>Share of the screen height between the HUD bars in the 1080x2340 reference layout.</summary>
+        const float ReferenceHudBand = 1f - 0.129f - 0.128f;
+
+        /// <summary>
+        /// Called by the HUD with the measured share of the screen height its top bar (down to the LEVEL pill) and its
+        /// booster bar take, so the camera fit and the flight arcs follow the real layout on every screen (safe area,
+        /// 16:9 phones, tablets). Re-lays the board out when the values changed.
+        /// </summary>
+        public void SetHudBands(float top, float bottom)
+        {
+            if (Mathf.Abs(top - TopBarScreenFraction) < 0.002f && Mathf.Abs(bottom - BottomBarScreenFraction) < 0.002f) return;
+            TopBarScreenFraction = top;
+            BottomBarScreenFraction = bottom;
+            ComputeTubePos(animate: false);
+        }
+
         void ComputeTubePos(bool animate)
         {
             int n = _tubes.Count;
@@ -475,18 +477,23 @@ namespace BallSortGame.Gameplay
                 for (int i = 0; i < countInRow; i++) { rowOf[idx] = r; positions[idx++] = new Vector2(xs[i], y); }
             }
 
-            // camera: fit the widest row horizontally and all rows vertically
+            // camera: fit the widest row horizontally and all rows vertically. The rows must fit the band of the screen
+            // between the HUD bars: the 2.6 margin suits the 1080x2340 reference, and when the bars take a bigger share of
+            // a shorter screen (16:9 phones, tablets) the camera zooms out by the same ratio.
             float aspect = cam != null ? cam.aspect : 9f / 16f;
+            float band = Mathf.Max(0.3f, 1f - TopBarScreenFraction - BottomBarScreenFraction);
+            float bandScale = Mathf.Max(1f, ReferenceHudBand / band);
             float size = 5f;
             size = Mathf.Max(size, (maxRowWidth / 2f + HorizontalMargin) / aspect);
-            size = Mathf.Max(size, rows * RowGap / 2f + 2.6f);
+            size = Mathf.Max(size, (rows * RowGap / 2f + 2.6f) * bandScale);
             size = Mathf.Max(size, MinCameraSize);
             if (cam != null)
             {
                 cam.orthographic = true;
                 cam.orthographicSize = size;
             }
-            float boardY = size * BoardOffsetFactor;
+            // the board sits in the middle of the band between the bars (plus the tuned offset)
+            float boardY = size * (BoardOffsetFactor + BottomBarScreenFraction - TopBarScreenFraction);
             tubesRoot.position = new Vector3(0f, boardY, 0f);
 
             // free space above each row: up to the top bar for the first row, up to the row above otherwise.
@@ -720,6 +727,35 @@ namespace BallSortGame.Gameplay
             to.MoveBackTo(from, step.Count, BallMoveSpeed, PerBallDelay, null);
             MovesChanged?.Invoke(_sumStep, UndosLeft);
             return true;
+        }
+
+        /// <summary>
+        /// Paid "continue" from the out-of-moves popup: takes back the last <paramref name="moves"/> moves one after the
+        /// other (free of the undo limit), then re-runs the dead-end check so the popup comes back if the board is still stuck.
+        /// Returns false when there is nothing to rewind.
+        /// </summary>
+        public bool Rewind(int moves)
+        {
+            if (_gameOver || _record.Count == 0 || moves <= 0) return false;
+            if (AnyTubeMoving()) return false;
+            if (_noMoveCheck != null) { StopCoroutine(_noMoveCheck); _noMoveCheck = null; }
+            ClearSelection();
+            StartCoroutine(RewindRoutine(Mathf.Min(moves, _record.Count)));
+            return true;
+        }
+
+        IEnumerator RewindRoutine(int moves)
+        {
+            for (int i = 0; i < moves && _record.Count > 0; i++)
+            {
+                var step = _record.Pop();
+                _sumStep = Mathf.Max(0, _sumStep - 1);
+                bool done = false;
+                _tubes[step.To].MoveBackTo(_tubes[step.From], step.Count, BallMoveSpeed, PerBallDelay, () => done = true);
+                while (!done) yield return null;
+                MovesChanged?.Invoke(_sumStep, UndosLeft);
+            }
+            ScheduleNoMoveCheck();
         }
 
         public bool AddTube()

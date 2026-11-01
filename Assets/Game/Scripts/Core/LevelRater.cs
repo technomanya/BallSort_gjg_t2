@@ -265,10 +265,10 @@ namespace BallSortGame.Core
                         int count = s.CountTopSameMovable(from, to);
                         if (count <= 0) continue;
                         bool toEmpty = s.IsEmpty(to);
-                        if (toEmpty)
+                        if (toEmpty && s.IsPlainEmpty(to) && s.KindOf(from) == TubeKind.Normal)
                         {
                             if (fromUniform && count == s.Count(from)) continue; // pure relocation
-                            if (seenEmpty) continue;                            // all empty tubes are equivalent
+                            if (seenEmpty) continue;                            // all plain empty tubes are equivalent
                             seenEmpty = true;
                         }
                         var next = s.Clone();
@@ -323,7 +323,7 @@ namespace BallSortGame.Core
                             int count = s.CountTopSameMovable(from, to);
                             if (count <= 0) continue;
                             bool toEmpty = s.IsEmpty(to);
-                            if (toEmpty)
+                            if (toEmpty && s.IsPlainEmpty(to) && s.KindOf(from) == TubeKind.Normal)
                             {
                                 if (fromUniform && count == s.Count(from)) continue;
                                 if (seenEmpty) continue;

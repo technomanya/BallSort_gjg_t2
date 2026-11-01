@@ -22,9 +22,13 @@ namespace BallSortGame.Core
     public sealed class TubeSpec
     {
         public TubePreset Preset = TubePreset.Luck;
+        /// <summary>Normal, InOnly (must start empty) or OutOnly (must start with balls).</summary>
+        public TubeKind Kind = TubeKind.Normal;
         public int Capacity = 4;
         /// <summary>Bottom-first colours for Deterministic / PartialLuck tubes; 0 = luck slot. Null or shorter than Capacity = remaining slots are luck slots.</summary>
         public int[] Fixed;
+        /// <summary>The bottom ball is heavy (the cannonball obstacle): it only ever moves into an empty tube. Needs a bottom ball.</summary>
+        public bool Heavy;
         /// <summary>Slots this tube has balls in. Luck/Partial tubes are full unless <see cref="FillCount"/> says otherwise.</summary>
         public int FillCount = -1;
 
@@ -34,6 +38,12 @@ namespace BallSortGame.Core
 
         public static TubeSpec Luck(int capacity = 4) => new TubeSpec { Preset = TubePreset.Luck, Capacity = capacity };
         public static TubeSpec Empty(int capacity = 4) => new TubeSpec { Preset = TubePreset.Empty, Capacity = capacity };
+        /// <summary>Empty tube that only accepts balls.</summary>
+        public static TubeSpec InOnly(int capacity = 4) => new TubeSpec { Preset = TubePreset.Empty, Capacity = capacity, Kind = TubeKind.InOnly };
+        /// <summary>Full luck tube that only gives balls away.</summary>
+        public static TubeSpec OutOnly(int capacity = 4) => new TubeSpec { Preset = TubePreset.Luck, Capacity = capacity, Kind = TubeKind.OutOnly };
+        /// <summary>Covered luck tube that opens when a neighbouring tube is completed.</summary>
+        public static TubeSpec Hidden(int capacity = 4) => new TubeSpec { Preset = TubePreset.Luck, Capacity = capacity, Kind = TubeKind.Hidden };
         public static TubeSpec Deterministic(int capacity, params int[] bottomFirst) =>
             new TubeSpec { Preset = TubePreset.Deterministic, Capacity = capacity, Fixed = bottomFirst, FillCount = bottomFirst.Length };
         public static TubeSpec Partial(int capacity, params int[] bottomFirstWithZeros) =>
@@ -82,6 +92,34 @@ namespace BallSortGame.Core
             return d;
         }
 
+        /// <summary>
+        /// Covers up to <paramref name="count"/> filled tubes (<see cref="TubeKind.Hidden"/>), picked at random from
+        /// <paramref name="seed"/>: never two side by side, so every hidden tube has a neighbour that can open it.
+        /// Returns how many tubes were covered.
+        /// </summary>
+        public int HideTubes(int count, int seed)
+        {
+            var candidates = new List<int>();
+            for (int i = 0; i < Tubes.Count; i++)
+                if (Tubes[i].Kind == TubeKind.Normal && Tubes[i].EffectiveFillCount > 0) candidates.Add(i);
+            var rng = new Random(seed);
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+            }
+            int hidden = 0;
+            foreach (int i in candidates)
+            {
+                if (hidden >= count) break;
+                if (i > 0 && Tubes[i - 1].Kind == TubeKind.Hidden) continue;
+                if (i + 1 < Tubes.Count && Tubes[i + 1].Kind == TubeKind.Hidden) continue;
+                Tubes[i].Kind = TubeKind.Hidden;
+                hidden++;
+            }
+            return hidden;
+        }
+
         /// <summary>Number of balls of each colour the fill must place (colour index 1..ColorCount), after the fixed slots.</summary>
         public int[] RemainingUnits(out int luckSlots, out string error)
         {
@@ -94,6 +132,9 @@ namespace BallSortGame.Core
             {
                 if (t.Capacity != cap) { error = "all tubes must share one capacity"; return null; }
                 int fill = t.EffectiveFillCount;
+                if (t.Kind == TubeKind.InOnly && fill > 0) { error = "an in-only tube must start empty"; return null; }
+                if (t.Kind == TubeKind.OutOnly && fill == 0) { error = "an out-only tube must start with balls"; return null; }
+                if (t.Heavy && fill == 0) { error = "a heavy ball needs a ball: the tube is empty"; return null; }
                 for (int s = 0; s < fill; s++)
                 {
                     int f = t.FixedAt(s);
@@ -104,7 +145,7 @@ namespace BallSortGame.Core
             }
             int remaining = 0;
             for (int c = 1; c <= ColorCount; c++) remaining += units[c];
-            if (remaining != luckSlots) { error = $"{luckSlots} luck slots but {remaining} balls left to place (every colour needs exactly {cap} balls)"; return null; }
+            if (remaining != luckSlots) { error = $"{luckSlots} hidden (?) slots but {remaining} balls left to place (every colour needs exactly {cap} balls)"; return null; }
             return units;
         }
 

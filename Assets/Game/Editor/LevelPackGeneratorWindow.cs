@@ -37,11 +37,14 @@ namespace BallSortGame.EditorTools
         int _tolerance = 0;
         int _maxFills = 150;
         bool _fastBudget = true;
+        int _hiddenTubes;
+        int _hiddenFrom = 10;
+        int _hiddenEvery = 1;
         int _baseSeed = 1;
         string _outputName = "gen_1_50";
 
         // ---- single rate ----
-        string _ratePack = "data/lv_1_100";
+        string _ratePack = "data/levels";
         int _rateFrom = 1;
         int _rateTo = 20;
 
@@ -69,6 +72,12 @@ namespace BallSortGame.EditorTools
             _tolerance = EditorGUILayout.IntSlider(new GUIContent("Bucket tolerance", "Accept fills this many buckets away from the target."), _tolerance, 0, 2);
             _maxFills = EditorGUILayout.IntSlider("Max fills per level", _maxFills, 10, 1000);
             _fastBudget = EditorGUILayout.Toggle(new GUIContent("Fast solver budget", "Off = larger A* / playout budgets, more exact buckets, slower."), _fastBudget);
+            _hiddenTubes = EditorGUILayout.IntSlider(new GUIContent("Hidden tubes per level", "Filled tubes covered by Art/Tubes/Hidden tube; one opens when a tube next to it is completed. Never two side by side."), _hiddenTubes, 0, 4);
+            if (_hiddenTubes > 0)
+            {
+                _hiddenFrom = EditorGUILayout.IntField(new GUIContent("Hidden tubes from level", "First level that gets hidden tubes."), _hiddenFrom);
+                _hiddenEvery = EditorGUILayout.IntSlider(new GUIContent("Hidden tubes every N levels", "1 = every level from the first one on, 3 = every third level, ..."), _hiddenEvery, 1, 10);
+            }
             _baseSeed = EditorGUILayout.IntField("Random seed", _baseSeed);
             _outputName = EditorGUILayout.TextField("Output (Resources/data/)", _outputName);
 
@@ -94,6 +103,7 @@ namespace BallSortGame.EditorTools
                 UseCurve = _useCurve, FixedColors = _fixedColors, FixedEmpties = _fixedEmpties, FixedBucket = _fixedBucket,
                 HardCadence = _hardCadence, DlbForHard = _dlbForHard, DlbCap = _dlbCap, Tolerance = _tolerance,
                 MaxFills = _maxFills, FastBudget = _fastBudget, BaseSeed = _baseSeed, OutputName = _outputName,
+                HiddenTubes = _hiddenTubes, HiddenFromLevel = _hiddenFrom, HiddenEvery = _hiddenEvery,
             };
             _log = GeneratePack(settings, true);
             Debug.Log(_log);
@@ -108,6 +118,8 @@ namespace BallSortGame.EditorTools
             public bool HardCadence = true, DlbForHard = true;
             public int DlbCap = 2, Tolerance = 0, MaxFills = 150;
             public bool FastBudget = true;
+            /// <summary>Filled tubes covered per level (<see cref="TubeKind.Hidden"/>) on levels HiddenFromLevel, + HiddenEvery, ...</summary>
+            public int HiddenTubes = 0, HiddenFromLevel = 10, HiddenEvery = 1;
             public int BaseSeed = 1;
             public string OutputName = "gen_1_50";
         }
@@ -127,22 +139,18 @@ namespace BallSortGame.EditorTools
                 {
                     if (showProgress && EditorUtility.DisplayCancelableProgressBar("Generating levels", $"Level {level} / {s.ToLevel}", (level - s.FromLevel) / (float)total)) break;
 
-                    LevelDesign design;
                     int target;
                     bool hard = s.HardCadence && ProgressionCurve.IsHardLevel(level);
                     bool superHard = s.HardCadence && ProgressionCurve.IsSuperHardLevel(level);
-                    if (s.UseCurve)
-                    {
-                        var slot = ProgressionCurve.For(level, s.Capacity);
-                        design = LevelDesign.Standard($"lvl{level}", slot.Colors, slot.Empties, s.Capacity, slot.SpareTubes);
-                        target = s.HardCadence ? slot.TargetBucket : Math.Min(slot.TargetBucket, 3);
-                    }
-                    else
-                    {
-                        design = LevelDesign.Standard($"lvl{level}", s.FixedColors, s.FixedEmpties, s.Capacity);
-                        target = superHard ? Math.Max(s.FixedBucket, 5) : hard ? Math.Max(s.FixedBucket, 4) : s.FixedBucket;
-                    }
+                    var curveSlot = ProgressionCurve.For(level, s.Capacity);
+                    LevelDesign NewDesign() => s.UseCurve
+                        ? LevelDesign.Standard($"lvl{level}", curveSlot.Colors, curveSlot.Empties, s.Capacity, curveSlot.SpareTubes)
+                        : LevelDesign.Standard($"lvl{level}", s.FixedColors, s.FixedEmpties, s.Capacity);
+                    if (s.UseCurve) target = s.HardCadence ? curveSlot.TargetBucket : Math.Min(curveSlot.TargetBucket, 3);
+                    else target = superHard ? Math.Max(s.FixedBucket, 5) : hard ? Math.Max(s.FixedBucket, 4) : s.FixedBucket;
                     if (level <= 4 && s.UseCurve) target = 1;
+                    int wantHidden = s.HiddenTubes > 0 && level >= s.HiddenFromLevel && (level - s.HiddenFromLevel) % Math.Max(1, s.HiddenEvery) == 0
+                        ? s.HiddenTubes : 0;
 
                     var opts = new GeneratorOptions
                     {
@@ -152,7 +160,18 @@ namespace BallSortGame.EditorTools
                         Budget = budget,
                         BaseSeed = s.BaseSeed + level * 10_000,
                     };
-                    var seeds = gen.Generate(design, opts, out var err);
+                    // hidden tubes make boards harder: when no fill reaches the target, try again with one tube fewer
+                    LevelDesign design;
+                    List<GeneratedLevel> seeds;
+                    string err;
+                    int hiddenTubes;
+                    for (int tryHidden = wantHidden; ; tryHidden--)
+                    {
+                        design = NewDesign();
+                        hiddenTubes = tryHidden > 0 ? design.HideTubes(tryHidden, s.BaseSeed + level * 10_000 + 7_000) : 0;
+                        seeds = gen.Generate(design, opts, out err);
+                        if (seeds.Count > 0 || tryHidden <= 0) break;
+                    }
                     if (seeds.Count == 0)
                     {
                         sb.AppendLine($"level {level}: no seed found ({err})");
@@ -181,7 +200,7 @@ namespace BallSortGame.EditorTools
                         }
                     }
                     stage.Levels.Add(data);
-                    sb.AppendLine($"level {level}: {design.ColorCount}c/{design.TubeCount}t target {target} -> " +
+                    sb.AppendLine($"level {level}: {design.ColorCount}c/{design.TubeCount}t" + (hiddenTubes > 0 ? $"/{hiddenTubes}h" : "") + (hiddenTubes < wantHidden ? $" (wanted {wantHidden}h)" : "") + $" target {target} -> " +
                                   string.Join(" ", seeds.Select(x => $"{x.Id}({x.Rating.OptimalMoves}m)")) +
                                   (data.DlbVariants != null ? $" +{data.DlbVariants.Count} dlb" : "") +
                                   (err != null ? $"  [{err}]" : ""));
@@ -208,6 +227,8 @@ namespace BallSortGame.EditorTools
         {
             PuzzleId = g.Id,
             Tubes = g.TubesTopFirst,
+            TubeKinds = g.TubeKinds,
+            Heavy = g.Heavy,
             Steps = g.Steps,
             Difficulty = g.Bucket,
         };

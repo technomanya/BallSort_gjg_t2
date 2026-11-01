@@ -1,3 +1,4 @@
+using BallSortGame.UI;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
@@ -20,12 +21,113 @@ namespace BallSortGame.LevelEditor
         public static readonly Color Bad = new Color(1f, 0.50f, 0.45f, 1f);
         public static readonly Color Muted = new Color(1f, 1f, 1f, 0.55f);
 
-        static Font _font;
         static Sprite _circle, _roundRect;
 
-        public static Font Font => _font != null ? _font : (_font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
+        public static Font Font => WordArt.Font;
         public static Sprite Circle => _circle != null ? _circle : (_circle = MakeRounded(128, 64, 0));
         public static Sprite RoundRect => _roundRect != null ? _roundRect : (_roundRect = MakeRounded(64, 18, 22));
+
+        // ------------------------------------------------------------------ game skin (Resources/UISkin), procedural fallbacks
+
+        public static UISkin Skin => UISkin.Current;
+        static Sprite Pick(Sprite skinSprite, Sprite fallback) => skinSprite != null ? skinSprite : fallback;
+        /// <summary>Dark pill panel of the HUD (booster bar, popups).</summary>
+        public static Sprite PillSprite => Pick(Skin?.pill, RoundRect);
+        public static Sprite SquareSprite => Pick(Skin?.buttonSquare, RoundRect);
+        public static Sprite RectSprite => Pick(Skin?.buttonRect, RoundRect);
+        public static Sprite GreenSprite => Pick(Skin?.buttonRectGreen, RoundRect);
+        public static Sprite CircleSprite => Pick(Skin?.buttonCircle, Circle);
+        public static Sprite FrameSprite => Pick(Skin?.squareFrame, RoundRect);
+        /// <summary>White when the skin draws the colours itself, the given tint otherwise.</summary>
+        public static Color Tint(Sprite skinSprite, Color fallback) => skinSprite != null ? Color.white : fallback;
+
+        /// <summary>Drop shadow like the HUD texts.</summary>
+        public static T Shadowed<T>(T graphic) where T : Graphic
+        {
+            var s = graphic.gameObject.AddComponent<Shadow>();
+            s.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            s.effectDistance = new Vector2(0f, -4f);
+            return graphic;
+        }
+
+        /// <summary>Fixed width inside a row.</summary>
+        public static T Fixed<T>(T c, float width) where T : Component
+        {
+            if (!c.TryGetComponent(out LayoutElement le)) le = c.gameObject.AddComponent<LayoutElement>();
+            le.minWidth = le.preferredWidth = width;
+            le.flexibleWidth = 0f;
+            return c;
+        }
+
+        /// <summary>Square HUD-style button with an icon (or a text when the icon is missing).</summary>
+        public static Button IconButton(Transform parent, string name, Sprite icon, string fallbackText, UnityAction onClick, float size = 110f)
+        {
+            var img = Image(name, parent, SquareSprite, Tint(Skin?.buttonSquare, ButtonColor), true);
+            Fixed(img, size);
+            var b = img.gameObject.AddComponent<Button>();
+            b.targetGraphic = img;
+            var colors = b.colors;
+            colors.disabledColor = new Color(1f, 1f, 1f, 0.4f);
+            b.colors = colors;
+            if (onClick != null) b.onClick.AddListener(onClick);
+            if (icon != null)
+            {
+                var ic = Image("icon", img.transform, icon, Color.white);
+                ic.rectTransform.sizeDelta = new Vector2(size * 0.66f, size * 0.66f);
+                ic.rectTransform.anchoredPosition = new Vector2(0f, size * 0.03f);
+                ic.preserveAspect = true;
+                ic.raycastTarget = false;
+            }
+            else Shadowed(Label(img.transform, fallbackText, Mathf.RoundToInt(size * 0.3f), TextAnchor.MiddleCenter, Color.white));
+            return b;
+        }
+
+        /// <summary>Rounded HUD-style text button; <paramref name="green"/> uses the green rectangle.</summary>
+        public static Button PillButton(Transform parent, string label, bool green, UnityAction onClick, float width, int fontSize = 40)
+        {
+            var sprite = green ? GreenSprite : RectSprite;
+            var img = Image(label, parent, sprite, Tint(green ? Skin?.buttonRectGreen : Skin?.buttonRect, green ? Go : ButtonColor), true);
+            Fixed(img, width);
+            var b = img.gameObject.AddComponent<Button>();
+            b.targetGraphic = img;
+            var colors = b.colors;
+            colors.disabledColor = new Color(1f, 1f, 1f, 0.4f);
+            b.colors = colors;
+            if (onClick != null) b.onClick.AddListener(onClick);
+            var t = Shadowed(Label(img.transform, label, fontSize, TextAnchor.MiddleCenter, Color.white));
+            t.rectTransform.offsetMin = new Vector2(16f, 0f);
+            t.rectTransform.offsetMax = new Vector2(-16f, 0f);
+            return b;
+        }
+
+        /// <summary>"CAPTION (-) value (+)" in a dark pill with round buttons. Returns the value text.</summary>
+        public static Text SkinStepper(Transform parent, string caption, UnityAction<int> onDelta, float width)
+        {
+            var box = Image(caption, parent, PillSprite, Tint(Skin?.pill, Bar), true);
+            Fixed(box, width);
+            var row = RowLayout(box.gameObject, 4f);
+            row.padding = new RectOffset(14, 14, 14, 14);
+            var cap = Flex(Rect("caption", box.transform), 1f);
+            Shadowed(Label(cap, caption, 26, TextAnchor.MiddleCenter, Color.white));
+            RoundButton(box.transform, "-", () => onDelta(-1));
+            var val = Fixed(Rect("value", box.transform), 56f);
+            var text = Shadowed(Label(val, "", 40, TextAnchor.MiddleCenter, Color.white));
+            RoundButton(box.transform, "+", () => onDelta(+1));
+            return text;
+        }
+
+        static Button RoundButton(Transform parent, string label, UnityAction onClick)
+        {
+            var img = Image(label, parent, CircleSprite, Tint(Skin?.buttonCircle, ButtonColor));
+            img.preserveAspect = true;
+            Fixed(img, 68f);
+            var b = img.gameObject.AddComponent<Button>();
+            b.targetGraphic = img;
+            b.onClick.AddListener(onClick);
+            var t = Shadowed(Label(img.transform, label, 48, TextAnchor.MiddleCenter, Color.white));
+            t.rectTransform.anchoredPosition = new Vector2(0f, 3f);
+            return b;
+        }
 
         /// <summary>Anti-aliased white rounded square; radius = size/2 gives a circle. border > 0 makes it 9-sliced.</summary>
         static Sprite MakeRounded(int size, float radius, int border)

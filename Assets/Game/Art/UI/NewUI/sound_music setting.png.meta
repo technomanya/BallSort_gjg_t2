@@ -1,0 +1,313 @@
+fileFormatVersion: 2
+guid: 815f1b2a749f6f9439bd77811c67e89f
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 9214711633586681329
+    second: sound_music setting_0
+  - first:
+      213: 8214087804803269026
+    second: sound_music setting_1
+  - first:
+      213: -3247245251325254631
+    second: sound_music setting_2
+  - first:
+      213: -8395777561371418630
+    second: sound_music setting_3
+  - first:
+      213: -164876768940500023
+    second: sound_music setting_4
+  - first:
+      213: -9009943127468347162
+    second: sound_music setting_5
+  - first:
+      213: -7495060218393371188
+    second: sound_music setting_6
+  - first:
+      213: -1019915540565765588
+    second: sound_music setting_7
+  - first:
+      213: 8285861978886944253
+    second: sound_music setting_8
+  - first:
+      213: 2501511133390343806
+    second: sound_music setting_9
+  - first:
+      213: -9050487007848318707
+    second: sound_music setting_10
+  - first:
+      213: 9067248317721300717
+    second: sound_music setting_11
+  - first:
+      213: -7316204679131028229
+    second: sound_music setting_12
+  - first:
+      213: 409035197224179820
+    second: sound_music setting_13
+  - first:
+      213: -3811132180599013802
+    second: sound_music setting_14
+  - first:
+      213: 2007402472591098872
+    second: sound_music setting_15
+  - first:
+      213: -7500462840381618036
+    second: sound_music setting_16
+  - first:
+      213: 564173336620864272
+    second: sound_music setting_17
+  - first:
+      213: 1653022697678840530
+    second: sound_music setting_18
+  - first:
+      213: 7052359209089683671
+    second: sound_music setting_19
+  - first:
+      213: -6440512632460693280
+    second: sound_music setting_20
+  - first:
+      213: 1158978069846112174
+    second: sound_music setting_21
+  - first:
+      213: -2585899733038206305
+    second: sound_music setting_22
+  - first:
+      213: 1714701405141078533
+    second: sound_music setting_23
+  - first:
+      213: 1062668024093648492
+    second: sound_music setting_24
+  - first:
+      213: 327880645175881837
+    second: sound_music setting_25
+  - first:
+      213: 685071151215473748
+    second: sound_music setting_26
+  - first:
+      213: 1377595822977187642
+    second: sound_music setting_27
+  - first:
+      213: -3838645655108728626
+    second: sound_music setting_28
+  - first:
+      213: -3397413180698414181
+    second: sound_music setting_29
+  - first:
+      213: 4440226756401194613
+    second: sound_music setting_30
+  - first:
+      213: -7022503926455662659
+    second: sound_music setting_31
+  - first:
+      213: 5105280701449824330
+    second: sound_music setting_32
+  - first:
+      213: 6794846344662816846
+    second: sound_music setting_33
+  - first:
+      213: 2330163725662106933
+    second: sound_music setting_34
+  - first:
+      213: 8668707535670534278
+    second: sound_music setting_35
+  - first:
+      213: -4730620667347475001
+    second: sound_music setting_36
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Android
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: sound_music setting_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 402
+        height: 52
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1f5f79bb86b31ef70800000000000000
+      internalID: 9214711633586681329
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 014a893f4f386434b971713e49bb026c
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      sound_music setting_0: 9214711633586681329
+      sound_music setting_1: 8214087804803269026
+      sound_music setting_10: -9050487007848318707
+      sound_music setting_11: 9067248317721300717
+      sound_music setting_12: -7316204679131028229
+      sound_music setting_13: 409035197224179820
+      sound_music setting_14: -3811132180599013802
+      sound_music setting_15: 2007402472591098872
+      sound_music setting_16: -7500462840381618036
+      sound_music setting_17: 564173336620864272
+      sound_music setting_18: 1653022697678840530
+      sound_music setting_19: 7052359209089683671
+      sound_music setting_2: -3247245251325254631
+      sound_music setting_20: -6440512632460693280
+      sound_music setting_21: 1158978069846112174
+      sound_music setting_22: -2585899733038206305
+      sound_music setting_23: 1714701405141078533
+      sound_music setting_24: 1062668024093648492
+      sound_music setting_25: 327880645175881837
+      sound_music setting_26: 685071151215473748
+      sound_music setting_27: 1377595822977187642
+      sound_music setting_28: -3838645655108728626
+      sound_music setting_29: -3397413180698414181
+      sound_music setting_3: -8395777561371418630
+      sound_music setting_30: 4440226756401194613
+      sound_music setting_31: -7022503926455662659
+      sound_music setting_32: 5105280701449824330
+      sound_music setting_33: 6794846344662816846
+      sound_music setting_34: 2330163725662106933
+      sound_music setting_35: 8668707535670534278
+      sound_music setting_36: -4730620667347475001
+      sound_music setting_4: -164876768940500023
+      sound_music setting_5: -9009943127468347162
+      sound_music setting_6: -7495060218393371188
+      sound_music setting_7: -1019915540565765588
+      sound_music setting_8: 8285861978886944253
+      sound_music setting_9: 2501511133390343806
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

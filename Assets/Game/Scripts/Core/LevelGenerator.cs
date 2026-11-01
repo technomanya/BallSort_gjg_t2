@@ -16,6 +16,10 @@ namespace BallSortGame.Core
         public LevelRating Rating;
 
         public List<List<int>> TubesTopFirst => LevelFiller.ToTopFirst(Board);
+        /// <summary>Per-tube kinds for the level JSON, null when every tube is normal.</summary>
+        public List<int> TubeKinds => Board.KindsOrNull();
+        /// <summary>Per-tube heavy-bottom flags for the level JSON, null when no ball is heavy.</summary>
+        public List<int> Heavy => Board.HeavyOrNull();
 
         /// <summary>Solution as [from, to] pairs (the level pack "steps" convention: the whole run moves).</summary>
         public List<List<int>> Steps

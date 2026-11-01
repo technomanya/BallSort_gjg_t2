@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using BallSortGame.Core;
 using UnityEngine;
 
 namespace BallSortGame.Gameplay
@@ -21,11 +22,24 @@ namespace BallSortGame.Gameplay
         public float BounceDuration = 0.16f;
 
         public int ColorIndex { get; private set; }
+        /// <summary>
+        /// Heavy ball (the cannonball obstacle): a normal coloured ball with a weight drawn on it. It only ever sits at
+        /// the bottom of a tube, so it only moves into an empty tube, alone. See <see cref="SetHeavy"/>.
+        /// </summary>
+        public bool IsHeavy { get; private set; }
         public bool IsMoving => _moving;
+        /// <summary>The colour is not shown yet (grey "?" ball); <see cref="Reveal"/> shows it.</summary>
+        public bool IsHidden { get; private set; }
+
+        static readonly Color HiddenTint = new Color(0.42f, 0.42f, 0.50f, 1f);
 
         SpriteRenderer _sr;
         Coroutine _move;
         bool _moving;
+        Sprite _realSprite;
+        Color _realColor = Color.white;
+        GameObject _mark;
+        SpriteRenderer _weight;
 
         void Awake() { _sr = GetComponent<SpriteRenderer>(); }
 
@@ -36,6 +50,76 @@ namespace BallSortGame.Gameplay
             _sr.sprite = sprite;
             _sr.sortingOrder = sortingOrder;
             name = $"Ball_{colorIndex}";
+        }
+
+        /// <summary>
+        /// Makes the ball heavy (or normal again): the cannonball <paramref name="weight"/> sprite is drawn over the
+        /// colour, which stays what it is for every rule but the move rule.
+        /// </summary>
+        public void SetHeavy(bool heavy, Sprite weight)
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            IsHeavy = heavy;
+            if (!heavy)
+            {
+                if (_weight != null) _weight.gameObject.SetActive(false);
+                return;
+            }
+            if (_weight == null)
+            {
+                var go = new GameObject("weight", typeof(SpriteRenderer));
+                go.transform.SetParent(transform, false);
+                _weight = go.GetComponent<SpriteRenderer>();
+            }
+            _weight.gameObject.SetActive(true);
+            _weight.sprite = weight;
+            _weight.color = Color.white;
+            _weight.sortingOrder = _sr.sortingOrder + 1;   // over the colour, under the "?" mark
+            name = $"Ball_{ColorIndex}_heavy";
+        }
+
+        /// <summary>
+        /// Hides the colour: the ball shows <paramref name="placeholder"/> (or its own sprite) tinted grey with a "?"
+        /// on it. The colour index stays, so the rules still know it; the player does not until <see cref="Reveal"/>.
+        /// </summary>
+        public void Hide(Sprite placeholder)
+        {
+            if (_sr == null) _sr = GetComponent<SpriteRenderer>();
+            if (!IsHidden)
+            {
+                _realSprite = _sr.sprite;
+                _realColor = _sr.color;
+            }
+            IsHidden = true;
+            if (placeholder != null) _sr.sprite = placeholder;
+            _sr.color = HiddenTint;
+            if (_mark == null)
+            {
+                _mark = new GameObject("mark", typeof(MeshRenderer), typeof(TextMesh));
+                _mark.transform.SetParent(transform, false);
+                var tm = _mark.GetComponent<TextMesh>();
+                tm.font = BallSortGame.UI.WordArt.Font;
+                tm.text = "?";
+                tm.fontSize = 64;
+                tm.fontStyle = FontStyle.Bold;
+                tm.characterSize = 0.11f;
+                tm.anchor = TextAnchor.MiddleCenter;
+                tm.alignment = TextAlignment.Center;
+                tm.color = Color.white;
+                var mr = _mark.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = tm.font.material;
+                mr.sortingOrder = _sr.sortingOrder + 2;   // above the glass
+            }
+        }
+
+        /// <summary>Shows the real colour (no-op for a visible ball).</summary>
+        public void Reveal()
+        {
+            if (!IsHidden) return;
+            IsHidden = false;
+            if (_realSprite != null) _sr.sprite = _realSprite;
+            _sr.color = _realColor;
+            if (_mark != null) { Destroy(_mark); _mark = null; }
         }
 
         /// <summary>Quick ease-out rise to the stand-by position above the tube (select).</summary>

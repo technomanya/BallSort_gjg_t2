@@ -385,7 +385,7 @@ namespace BallSortGame.MiniGame
             SquareButton("btn - settings", p, new Vector2(-411f, 625f), 140f, _skin != null ? _skin.iconSettings : null, "S", OpenSettings);
             SquareButton("btn - close", p, new Vector2(411f, 625f), 140f, _skin != null ? _skin.iconClose : null, "X", Close);
             var titleBg = Img("title_panel", p, rect, Panel, new Vector2(0f, 652f), new Vector2(440f, 180f), true);
-            Title("title", titleBg.transform, new Vector2(0f, 22f), new Vector2(420f, 100f), "Mana Flip", 66);
+            WordArt.Picture(Title("title", titleBg.transform, new Vector2(0f, 22f), new Vector2(420f, 100f), "Mana Flip", 66), _skin != null ? _skin.wordManaFlip : null);
             _stageText = Label("stage", titleBg.transform, new Vector2(0f, -40f), new Vector2(420f, 50f), "", 36, Color.white);
 
             // ---- reward panel: one row per item
