@@ -318,6 +318,27 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
+        /// Any move left that changes something (the reference's HasNoMove rule): a legal move that is not pouring a
+        /// single-colour tube into an empty tube of the same or greater height, which only relocates the balls. The game
+        /// fails a level only when this is false, however hopeless the board already is.
+        /// </summary>
+        public bool HasUsefulMove()
+        {
+            for (int f = 0; f < TubeCount; f++)
+            {
+                if (!CanExport(f)) continue;
+                bool uniform = IsUniform(f);
+                for (int t = 0; t < TubeCount; t++)
+                {
+                    if (!CanImport(f, t)) continue;
+                    if (uniform && _counts[t] == 0 && CapacityOf(t) >= CapacityOf(f)) continue;   // pointless relocation
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// FNV-1a hash over the tube contents. Tubes are hashed in a canonical (sorted) order so that
         /// boards that only differ by tube permutation collapse to one state.
         /// </summary>

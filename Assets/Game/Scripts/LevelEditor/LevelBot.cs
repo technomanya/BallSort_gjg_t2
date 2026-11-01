@@ -10,7 +10,8 @@ using UnityEngine;
 namespace BallSortGame.LevelEditor
 {
     /// <summary>
-    /// Plays the loaded level pack from a given level to the end on the real board, the way a player would: every
+    /// Plays the loaded level pack from a given level to the end (or one fill alone, <see cref="RunSingle"/>) on the
+    /// real board, the way a player would: every
     /// level is audited (<see cref="LevelAudit"/>) and solved on a worker thread, then the bot taps the tubes of the
     /// solution through <see cref="GameManager.OnTubeClick"/> and waits for the animations like a finger would.
     /// The other fills of a slot (variants, dlb) are solver-checked in the background while the main fill is played.
@@ -25,6 +26,10 @@ namespace BallSortGame.LevelEditor
         public float Speed = 4f;
 
         public bool IsRunning { get; private set; }
+        /// <summary>The one fill being played alone (the editor's "this level"); null while the pack is played.</summary>
+        public LevelData Single { get; private set; }
+        /// <summary>Place name of <see cref="Single"/> in the status, the issues and the report.</summary>
+        public string SingleName { get; private set; }
         public int FromLevel { get; private set; }
         public int CurrentLevel { get; private set; }
         public int LevelCount { get; private set; }
@@ -51,16 +56,46 @@ namespace BallSortGame.LevelEditor
         public void Run(int fromLevel = 1)
         {
             if (IsRunning) return;
+            Single = null;
+            SingleName = null;
+            FromLevel = Mathf.Max(1, fromLevel);
+            Begin(RunRoutine());
+        }
+
+        /// <summary>Plays one fill alone (the editor's current level) as the override level, then reports on it.</summary>
+        public void RunSingle(LevelData level, string name)
+        {
+            if (IsRunning || level == null) return;
+            Single = level;
+            SingleName = string.IsNullOrEmpty(name) ? "This level" : name;
+            FromLevel = 1;
+            Begin(RunSingleRoutine());
+        }
+
+        void Begin(IEnumerator routine)
+        {
             Issues.Clear();
             Log.Clear();
             Played = Won = Skipped = 0;
             Stopped = _stop = false;
-            FromLevel = Mathf.Max(1, fromLevel);
             IsRunning = true;
             _savedTimeScale = Time.timeScale;
             game.IsBotPlaying = true;
             game.NoMoves += OnNoMoves;
-            _run = StartCoroutine(RunRoutine());
+            _run = StartCoroutine(routine);
+        }
+
+        /// <summary>"Level 3/120" while the pack is played, the level's name when one fill is played alone.</summary>
+        string Where(int level) => Single != null ? SingleName : $"Level {level}/{LevelCount}";
+
+        /// <summary>Report / log prefix: "Level 3 (id)" or "name (id)".</summary>
+        string LogName(int level, string id) => (Single != null ? SingleName : $"Level {level}") + (string.IsNullOrEmpty(id) ? "" : $" ({id})");
+
+        /// <summary>Issues of a single run name the level, not "Level 1".</summary>
+        void Tag(List<LevelIssue> issues)
+        {
+            if (Single == null) return;
+            foreach (var i in issues) i.Label = SingleName;
         }
 
         /// <summary>Stops after the current move; the report then covers what was played so far.</summary>
@@ -97,49 +132,66 @@ namespace BallSortGame.LevelEditor
             Issues.AddRange(LevelAudit.AuditPack(stage));
 
             for (int lv = FromLevel; lv <= LevelCount && !_stop; lv++)
-            {
-                Time.timeScale = Speed;
-                CurrentLevel = lv;
-                var slot = stage.Levels[lv - 1];
-                Status = $"Level {lv}/{LevelCount}: solving...";
-
-                // show the level while the worker thread audits and solves it
-                if (slot.Tubes != null && slot.Tubes.Count > 0 && slot.Capacity > 0) game.StartLevel(lv, 0);
-
-                AuditResult main = null;
-                List<LevelIssue> others = null;
-                var task = Task.Run(() =>
-                {
-                    main = LevelAudit.Audit(slot, lv, 0, LevelAudit.PlayBudget);
-                    others = LevelAudit.AuditOtherSeeds(slot, lv, LevelAudit.CheckBudget);
-                });
-                while (!task.IsCompleted) yield return null;
-                if (task.IsFaulted)
-                {
-                    var e = task.Exception?.GetBaseException();
-                    Debug.LogException(e);
-                    Issues.Add(new LevelIssue { Level = lv, PuzzleId = slot.PuzzleId, Severity = IssueSeverity.Error, Message = "the audit crashed: " + e?.Message, Data = slot });
-                    Skipped++;
-                    continue;
-                }
-                Issues.AddRange(main.Issues);
-                Issues.AddRange(others);
-
-                if (!main.Playable)
-                {
-                    Skipped++;
-                    string why = main.Issues.Count > 0 ? main.Issues[0].Message : "not playable";
-                    Log.Add($"Level {lv} ({slot.PuzzleId}): SKIPPED - {why}");
-                    Status = $"Level {lv}/{LevelCount}: {why}";
-                    yield return Wait(1.2f);   // leave the broken level on screen for a moment
-                    continue;
-                }
-
-                Played++;
-                yield return Play(slot, lv, main.Rating);
-            }
+                yield return AuditAndPlay(stage.Levels[lv - 1], lv);
             Status = _stop ? "Stopped." : "Done.";
             Finish();
+        }
+
+        IEnumerator RunSingleRoutine()
+        {
+            LevelCount = 1;
+            yield return AuditAndPlay(Single, 1);
+            Status = _stop ? "Stopped." : "Done.";
+            Finish();
+        }
+
+        /// <summary>Shows a fill, audits and solves it on a worker thread, then plays the solution on the board.</summary>
+        IEnumerator AuditAndPlay(LevelData slot, int lv)
+        {
+            Time.timeScale = Speed;
+            CurrentLevel = lv;
+            Status = $"{Where(lv)}: solving...";
+
+            // show the level while the worker thread audits and solves it
+            if (slot.Tubes != null && slot.Tubes.Count > 0 && slot.Capacity > 0)
+            {
+                if (Single != null) game.SetOverrideLevel(slot);
+                else game.StartLevel(lv, 0);
+            }
+
+            AuditResult main = null;
+            List<LevelIssue> others = null;
+            var task = Task.Run(() =>
+            {
+                main = LevelAudit.Audit(slot, lv, 0, LevelAudit.PlayBudget);
+                others = LevelAudit.AuditOtherSeeds(slot, lv, LevelAudit.CheckBudget);
+            });
+            while (!task.IsCompleted) yield return null;
+            if (task.IsFaulted)
+            {
+                var e = task.Exception?.GetBaseException();
+                Debug.LogException(e);
+                Issues.Add(new LevelIssue { Level = lv, Label = SingleName, PuzzleId = slot.PuzzleId, Severity = IssueSeverity.Error, Message = "the audit crashed: " + e?.Message, Data = slot });
+                Skipped++;
+                yield break;
+            }
+            Tag(main.Issues);
+            Tag(others);
+            Issues.AddRange(main.Issues);
+            Issues.AddRange(others);
+
+            if (!main.Playable)
+            {
+                Skipped++;
+                string why = main.Issues.Count > 0 ? main.Issues[0].Message : "not playable";
+                Log.Add($"{LogName(lv, slot.PuzzleId)}: SKIPPED - {why}");
+                Status = $"{Where(lv)}: {why}";
+                yield return Wait(1.2f);   // leave the broken level on screen for a moment
+                yield break;
+            }
+
+            Played++;
+            yield return Play(slot, lv, main.Rating);
         }
 
         IEnumerator Play(LevelData slot, int level, LevelRating rating)
@@ -168,7 +220,7 @@ namespace BallSortGame.LevelEditor
                 if (!from.IsSelected) { failure = $"tube {m.From + 1} could not be selected for move {i + 1}"; break; }
                 game.OnTubeClick(to);
                 played++;
-                Status = $"Level {level}/{LevelCount}: move {played}";
+                Status = $"{Where(level)}: move {played}";
                 if (hiddenRun)
                 {
                     yield return WaitSettled();
@@ -186,23 +238,23 @@ namespace BallSortGame.LevelEditor
             string id = slot.PuzzleId;
             if (failure != null)
             {
-                Issues.Add(new LevelIssue { Level = level, PuzzleId = id, Severity = IssueSeverity.Error, Message = failure, Data = slot });
-                Log.Add($"Level {level} ({id}): FAILED after {i} moves - {failure}");
+                Issues.Add(new LevelIssue { Level = level, Label = SingleName, PuzzleId = id, Severity = IssueSeverity.Error, Message = failure, Data = slot });
+                Log.Add($"{LogName(level, id)}: FAILED after {i} moves - {failure}");
                 yield return Wait(1.0f);
                 yield break;
             }
             if (game.GameOver())
             {
                 Won++;
-                Log.Add($"Level {level} ({id}): won in {played} moves, bucket {rating.Bucket}, {rating.Tubes} tubes {rating.Colors} colours");
-                Status = $"Level {level}/{LevelCount}: won in {played} moves";
+                Log.Add($"{LogName(level, id)}: won in {played} moves, bucket {rating.Bucket}, {rating.Tubes} tubes {rating.Colors} colours");
+                Status = $"{Where(level)}: won in {played} moves";
                 yield return Wait(game.WinDelay + 0.3f);   // let the "Well done" popup show like in play
             }
             else
             {
                 string board = game.BuildBoard().ToString();
-                Issues.Add(new LevelIssue { Level = level, PuzzleId = id, Severity = IssueSeverity.Error, Message = $"the solver's solution ({played} moves played) did not finish the level; board after it: {board}", Data = slot });
-                Log.Add($"Level {level} ({id}): NOT WON after the solution");
+                Issues.Add(new LevelIssue { Level = level, Label = SingleName, PuzzleId = id, Severity = IssueSeverity.Error, Message = $"the solver's solution ({played} moves played) did not finish the level; board after it: {board}", Data = slot });
+                Log.Add($"{LogName(level, id)}: NOT WON after the solution");
                 yield return Wait(1.0f);
             }
         }
@@ -222,7 +274,7 @@ namespace BallSortGame.LevelEditor
         public string Summary()
         {
             int errors = ErrorCount, warnings = Issues.Count - errors;
-            string range = FromLevel > 1 ? $"levels {FromLevel}-{LevelCount}" : $"{LevelCount} levels";
+            string range = Single != null ? SingleName : FromLevel > 1 ? $"levels {FromLevel}-{LevelCount}" : $"{LevelCount} levels";
             return $"{range}: {Won} won, {Skipped} skipped, {Played - Won} failed, {errors} error(s), {warnings} warning(s)" + (Stopped ? " (stopped)" : "");
         }
 

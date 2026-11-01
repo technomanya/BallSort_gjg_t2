@@ -18,8 +18,11 @@ namespace BallSortGame.Core
         /// <summary>The fill the issue is about (null for pack-wide issues).</summary>
         public LevelData Data;
 
+        /// <summary>Overrides the "Level N" place name, e.g. the name of the editor level the bot played alone.</summary>
+        public string Label;
+
         public string SeedLabel => SeedIndex <= 0 ? "" : SeedIndex >= 1000 ? $" dlb {SeedIndex - 999}" : $" seed {SeedIndex + 1}";
-        public string Where => Level > 0 ? $"Level {Level}{SeedLabel}" : "Pack";
+        public string Where => Label != null ? Label + SeedLabel : Level > 0 ? $"Level {Level}{SeedLabel}" : "Pack";
 
         public override string ToString() =>
             $"[{(Severity == IssueSeverity.Error ? "ERROR" : "warn")}] {Where}{(string.IsNullOrEmpty(PuzzleId) ? "" : $" ({PuzzleId})")}: {Message}";

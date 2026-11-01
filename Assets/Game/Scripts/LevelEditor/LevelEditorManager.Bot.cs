@@ -6,9 +6,10 @@ using UnityEngine.UI;
 namespace BallSortGame.LevelEditor
 {
     /// <summary>
-    /// "PLAY AS BOT": the <see cref="LevelBot"/> plays the loaded pack from level 1 on the real board with the HUD
-    /// showing, a bar at the bottom reports progress (speed toggle, STOP), and when it is through (or stopped) a report
-    /// lists every issue; tapping an issue loads that fill into the editor so it can be fixed and saved.
+    /// "PLAY AS BOT" asks ALL LEVELS or THIS LEVEL. The <see cref="LevelBot"/> then plays either the loaded pack from
+    /// level 1 or just the level being edited (the same fill TEST would play) on the real board with the HUD showing;
+    /// a bar at the bottom reports progress (speed toggle, STOP), and when it is through (or stopped) a report lists
+    /// every issue; tapping a pack issue loads that fill into the editor so it can be fixed and saved.
     /// </summary>
     public partial class LevelEditorManager
     {
@@ -17,7 +18,7 @@ namespace BallSortGame.LevelEditor
         LevelBot _bot;
         bool _botting;
         int _botSpeedIndex = 1;
-        GameObject _botBar, _report;
+        GameObject _botBar, _report, _botChoice;
         Text _botStatus, _botSpeedText, _reportTitle, _reportSummary, _packText;
         RectTransform _reportList;
 
@@ -30,9 +31,33 @@ namespace BallSortGame.LevelEditor
 
         // ------------------------------------------------------------------ run
 
-        void PlayAsBot()
+        /// <summary>PLAY AS BOT: the little popup asking which levels to play.</summary>
+        void AskBot()
         {
+            if (_job != null) { Status("Still working on the last job...", EditorUI.Bad); return; }
+            _botChoice.SetActive(true);
+        }
+
+        /// <summary>ALL LEVELS: the whole loaded pack from level 1.</summary>
+        void PlayAllAsBot()
+        {
+            _botChoice.SetActive(false);
             if (game.Stage == null || game.Stage.Levels.Count == 0) { Status("No level pack is loaded in GameManager.", EditorUI.Bad); return; }
+            StartBot(bot => bot.Run(1));
+        }
+
+        /// <summary>THIS LEVEL: the level being edited, once, with the same fill TEST would play.</summary>
+        void PlayThisAsBot()
+        {
+            _botChoice.SetActive(false);
+            var data = TestData();
+            if (data == null) return;
+            string name = _level.Slot > 0 ? $"Level {_level.Slot} ({_level.Name})" : _level.Name;
+            StartBot(bot => bot.RunSingle(data, name));
+        }
+
+        void StartBot(System.Action<LevelBot> run)
+        {
             if (_job != null) { Status("Still working on the last job...", EditorUI.Bad); return; }
             if (_bot == null)
             {
@@ -50,7 +75,7 @@ namespace BallSortGame.LevelEditor
             var menu = FindFirstObjectByType<MainMenuView>();
             if (menu != null && MainMenuView.IsOpen) menu.Play();
             _bot.Speed = BotSpeeds[_botSpeedIndex];
-            _bot.Run(1);
+            run(_bot);
             UpdateBotBar();
         }
 
@@ -121,7 +146,9 @@ namespace BallSortGame.LevelEditor
             _reportSummary.text = _bot.Summary();
             _reportSummary.color = _bot.ErrorCount > 0 ? EditorUI.Bad : EditorUI.Good;
             if (_bot.Issues.Count == 0)
-                EditorUI.ListButton(_reportList, "No issues found. Every level is well-formed and the bot won them all.", EditorUI.Bar, null, 110f);
+                EditorUI.ListButton(_reportList, _bot.Single != null
+                    ? "No issues found. The level is well-formed and the bot won it."
+                    : "No issues found. Every level is well-formed and the bot won them all.", EditorUI.Bar, null, 110f);
             foreach (var issue in _bot.Issues)
             {
                 var captured = issue;
@@ -139,6 +166,12 @@ namespace BallSortGame.LevelEditor
         void EditIssue(LevelIssue issue)
         {
             StopBot(true);
+            if (_bot.Single != null)
+            {
+                // the level is the one on the editor already: just bring the finding along
+                Status($"{issue.Where}: {issue.Message}", EditorUI.Bad);
+                return;
+            }
             string name = string.IsNullOrEmpty(issue.PuzzleId) ? $"lv{issue.Level}_fix" : issue.PuzzleId;
             try
             {
@@ -169,12 +202,36 @@ namespace BallSortGame.LevelEditor
             var pill = EditorUI.Image("pack_label", row, EditorUI.PillSprite, EditorUI.Tint(EditorUI.Skin?.pill, EditorUI.Bar), true);
             EditorUI.Flex(pill, 1f);
             _packText = EditorUI.Shadowed(EditorUI.Label(pill.transform, "", 28, TextAnchor.MiddleCenter, Color.white, FontStyle.Normal));
-            EditorUI.PillButton(row, "PLAY AS BOT", true, PlayAsBot, 330f, 40);
+            EditorUI.PillButton(row, "PLAY AS BOT", true, AskBot, 330f, 40);
             EditorUI.PillButton(row, "SHARE", false, Share, 200f, 40);
         }
 
         void BuildBotUI(RectTransform root)
         {
+            // ---- "which levels?" popup: dim blocker (tap outside closes), card with two choices
+            var blocker = EditorUI.Panel("bot_choice", root, new Color(0f, 0f, 0f, 0.6f));
+            blocker.sprite = null;
+            blocker.raycastTarget = true;
+            var closeBtn = blocker.gameObject.AddComponent<Button>();
+            closeBtn.transition = Selectable.Transition.None;
+            closeBtn.onClick.AddListener(() => _botChoice.SetActive(false));
+            var card = EditorUI.Image("card", blocker.transform, EditorUI.RoundRect, EditorUI.Bar, true);
+            card.rectTransform.anchorMin = card.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            card.rectTransform.sizeDelta = new Vector2(880f, 470f);
+            card.gameObject.AddComponent<Button>().transition = Selectable.Transition.None;   // swallows taps so the blocker does not close
+            var head = EditorUI.Band("title", card.transform, true, 36f, 70f, 40f);
+            EditorUI.Shadowed(EditorUI.Label(head, "PLAY AS BOT", 44, TextAnchor.MiddleCenter, Color.white));
+            var sub = EditorUI.Band("hint", card.transform, true, 112f, 60f, 40f);
+            EditorUI.Shadowed(EditorUI.Label(sub, "Which levels should the bot play?", 28, TextAnchor.MiddleCenter, EditorUI.Muted, FontStyle.Normal));
+            var choices = EditorUI.Row("choices", card.transform, true, 190f, 110f, 24f);
+            ((RectTransform)choices).sizeDelta = new Vector2(-80f, 110f);
+            EditorUI.Flex(EditorUI.PillButton(choices, "ALL LEVELS", false, PlayAllAsBot, 380f, 38), 1f);
+            EditorUI.Flex(EditorUI.PillButton(choices, "THIS LEVEL", true, PlayThisAsBot, 380f, 38), 1f);
+            var cancelRow = EditorUI.Row("cancel", card.transform, false, 36f, 90f, 24f);
+            EditorUI.PillButton(cancelRow, "CANCEL", false, () => _botChoice.SetActive(false), 300f, 36);
+            _botChoice = blocker.gameObject;
+            _botChoice.SetActive(false);
+
             // ---- bot bar while playing: status pill, speed, STOP (above the booster bar, like the "< EDITOR" pill)
             var bar = EditorUI.Row("bot_bar", root, false, 320f, 110f, 16f);
             var pill = EditorUI.Image("bot_status", bar, EditorUI.PillSprite, EditorUI.Tint(EditorUI.Skin?.pill, EditorUI.Bar), true);

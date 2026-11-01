@@ -252,10 +252,12 @@ namespace BallSortGame.MiniGame
             onLand?.Invoke();
         }
 
-        static bool Testing()
+        /// <summary>Designer test plays and the level bot earn nothing: no tube bursts, nothing banked on the win.</summary>
+        bool Testing()
         {
+            if (game != null && game.IsBotPlaying) return true;
             var editor = FindFirstObjectByType<LevelEditorManager>();
-            return editor != null && editor.IsTesting;   // designer test plays earn nothing
+            return editor != null && editor.IsTesting;
         }
 
         // =====================================================================

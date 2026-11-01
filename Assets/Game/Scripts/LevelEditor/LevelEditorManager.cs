@@ -143,6 +143,11 @@ namespace BallSortGame.LevelEditor
             }
             if (_open)
             {
+                if (_botChoice != null && _botChoice.activeSelf)
+                {
+                    if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.F2)) _botChoice.SetActive(false);
+                    return;
+                }
                 if (_goField != null && _goField.isFocused) _typingUntil = Time.unscaledTime + 0.2f;
                 if (Time.unscaledTime < _typingUntil) return;
                 if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.F2)) Close();
@@ -192,6 +197,7 @@ namespace BallSortGame.LevelEditor
             _open = _testing = false;
             _panel.SetActive(false);
             _testBar.SetActive(false);
+            if (_botChoice != null) _botChoice.SetActive(false);
             game.MinCameraSize = 0f;
             bool moved = _level != null && InPack(_level.Slot) && SlotOf(game.CurrentLevel) != _level.Slot;
             bool overridden = game.OverrideLevel != null;
@@ -292,18 +298,26 @@ namespace BallSortGame.LevelEditor
             if (_hudRaycaster != null) _hudRaycaster.enabled = on;
         }
 
+        /// <summary>
+        /// What TEST and the bot's "this level" play: the generated seeds when there are any, otherwise one random
+        /// fill of the layout. Null (with the reason in the status line) when the layout is not valid or cannot be filled.
+        /// </summary>
+        LevelData TestData()
+        {
+            var data = _level.Seeds;
+            if (data != null) return data;
+            if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return null; }
+            int seed = UnityEngine.Random.Range(1, int.MaxValue);
+            var board = _level.Fill(seed, out error);
+            if (board == null) { Status(error, EditorUI.Bad); return null; }
+            return new LevelData { PuzzleId = $"{_level.Name}_seed{seed}", Tubes = LevelFiller.ToTopFirst(board), TubeKinds = board.KindsOrNull(), Heavy = board.HeavyOrNull(), Hidden = _level.HiddenTopFirst() };
+        }
+
         /// <summary>Plays the generated seeds when there are any, otherwise one random fill of the layout.</summary>
         void Test()
         {
-            var data = _level.Seeds;
-            if (data == null)
-            {
-                if (!_level.Validate(out var error)) { Status(error, EditorUI.Bad); return; }
-                int seed = UnityEngine.Random.Range(1, int.MaxValue);
-                var board = _level.Fill(seed, out error);
-                if (board == null) { Status(error, EditorUI.Bad); return; }
-                data = new LevelData { PuzzleId = $"{_level.Name}_seed{seed}", Tubes = LevelFiller.ToTopFirst(board), TubeKinds = board.KindsOrNull(), Heavy = board.HeavyOrNull(), Hidden = _level.HiddenTopFirst() };
-            }
+            var data = TestData();
+            if (data == null) return;
             _testing = true;
             _panel.SetActive(false);
             _testBar.SetActive(true);

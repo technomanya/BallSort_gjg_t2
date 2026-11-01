@@ -11,7 +11,7 @@ namespace BallSortGame.Gameplay
     /// <summary>
     /// Runtime game loop, modelled on BallSort.GameMgr of the reference game:
     /// StartGame -> build tubes (ComputeTubePos / TubeLayout) -> OnTubeClick (select / move) ->
-    /// OnMoveEnd (tube-full check, win check) -> EndGame; Undo with a RecordStep stack; AddTube; CheckNoMove via the solver.
+    /// OnMoveEnd (tube-full check, win check) -> EndGame; Undo with a RecordStep stack; AddTube; CheckNoMove when no useful move is left.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -687,14 +687,9 @@ namespace BallSortGame.Gameplay
             _noMoveCheck = null;
             if (_gameOver) yield break;
 
-            var board = BuildBoard();
-            bool dead = !board.HasAnyMove();
-            if (!dead)
-            {
-                var verdict = _solver.Solve(board, new SolverBudget { MaxStates = 120_000, MaxMilliseconds = 250 });
-                dead = verdict == SolveVerdict.Unsolvable;
-            }
-            if (dead)
+            // The level fails only when nothing useful is left to do: the player plays every available move first,
+            // even on a board the solver already knows is lost.
+            if (!BuildBoard().HasUsefulMove())
             {
                 yield return new WaitForSeconds(0.4f);
                 if (!_gameOver)
