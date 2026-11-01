@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: faf3d426abe38bf4891fc6f2748e2be1
+guid: ea9c7d1738071e541bc1527b085262ef
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -3677275728376508240
-    second: well done pop up background_0
+      213: 8573436538733981863
+    second: small pop up FLAT shade_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,23 +126,23 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: well done pop up background_0
+      name: small pop up FLAT shade_0
       rect:
         serializedVersion: 2
-        x: 31
-        y: 41
+        x: 0
+        y: 0
         width: 292
         height: 357
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
-      border: {x: 50, y: 50, z: 50, w: 50}
+      border: {x: 40, y: 40, z: 40, w: 40}
       customData: 
       outline: []
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 0b0d3f44531b7fcc0800000000000000
-      internalID: -3677275728376508240
+      spriteID: 7a0f793ab17faf670800000000000000
+      internalID: 8573436538733981863
       vertices: []
       indices: 
       edges: []
@@ -151,7 +151,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: f5ba63fbab1e2ef4f94b67c3981e8180
+    spriteID: 4905088efa18e1a42a1520c19f2076e1
     internalID: 0
     vertices: []
     indices: 
@@ -161,7 +161,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      well done pop up background_0: -3677275728376508240
+      small pop up FLAT shade_0: 8573436538733981863
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

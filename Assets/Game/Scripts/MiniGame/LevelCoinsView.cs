@@ -37,8 +37,8 @@ namespace BallSortGame.MiniGame
         [Tooltip("Counter centre from the top right corner, in canvas units (1080 x 2340); clear of the top bar and the no-moves close button.")]
         public Vector2 CounterPosition = new Vector2(-200f, -370f);
         [Tooltip("Counter centre on the win screen, from the screen centre, and its scale there.")]
-        public Vector2 WinPosition = new Vector2(0f, -200f);
-        public float WinScale = 1.2f;
+        public Vector2 WinPosition = new Vector2(0f, -170f);   // between the coin ring and the CONTINUE button of the gold panel
+        public float WinScale = 1.1f;
         public float CoinSize = 84f;
 
         [Header("Motion")]

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using BallSortGame.Core;
+using BallSortGame.Haptics;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -229,6 +230,7 @@ namespace BallSortGame.Gameplay
         void Begin(LevelData data)
         {
             StartGameInternal(data);
+            Haptic.Play(HapticType.LevelStart);
             LevelStarted?.Invoke(CurrentLevel, data);
             MovesChanged?.Invoke(_sumStep, UndosLeft);
             AddTubeChanged?.Invoke(AddTubesLeft);
@@ -539,6 +541,7 @@ namespace BallSortGame.Gameplay
                     return;
                 }
                 tube.OnSelect();
+                Haptic.Play(HapticType.TubeSelect);
                 _curTube = tube;
                 return;
             }
@@ -553,6 +556,7 @@ namespace BallSortGame.Gameplay
             {
                 var from = _curTube;
                 _curTube = null;
+                Haptic.Play(HapticType.PourStart);
                 tube.Import(from, BallMoveSpeed, PerBallDelay, OnMoveEnd);
             }
             else
@@ -568,7 +572,11 @@ namespace BallSortGame.Gameplay
 
         void ClearSelection()
         {
-            if (_curTube != null) _curTube.CancelSelect();
+            if (_curTube != null)
+            {
+                _curTube.CancelSelect();
+                Haptic.Play(HapticType.TubeDeselect);
+            }
             _curTube = null;
         }
 
@@ -580,6 +588,7 @@ namespace BallSortGame.Gameplay
         {
             _record.Push(new RecordStep { From = from.Index, To = to.Index, Count = count });
             _sumStep++;
+            Haptic.Play(HapticType.PourEnd);
             MovesChanged?.Invoke(_sumStep, UndosLeft);
 
             if (to.IsCompleted)
@@ -632,6 +641,7 @@ namespace BallSortGame.Gameplay
         void EndGame()
         {
             _gameOver = true;
+            Haptic.Play(HapticType.LevelWin);
             _attemptByLevel.Remove(CurrentLevel);   // a win resets the retry count, so the next visit starts at seed 0 again
             SaveProgress();
             ClearSelection();
@@ -683,7 +693,11 @@ namespace BallSortGame.Gameplay
             if (dead)
             {
                 yield return new WaitForSeconds(0.4f);
-                if (!_gameOver) NoMoves?.Invoke();
+                if (!_gameOver)
+                {
+                    Haptic.Play(HapticType.LevelLose);
+                    NoMoves?.Invoke();
+                }
             }
         }
 

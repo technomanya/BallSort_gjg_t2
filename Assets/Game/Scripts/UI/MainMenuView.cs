@@ -1,6 +1,7 @@
 using System.Collections;
 using BallSortGame.Core;
 using BallSortGame.Gameplay;
+using BallSortGame.Haptics;
 using BallSortGame.MiniGame;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -46,6 +47,8 @@ namespace BallSortGame.UI
         {
             if (game == null) game = FindFirstObjectByType<GameManager>();
             if (logo != null) _logoHome = logo.anchoredPosition;
+            Haptic.Bind(startButton);
+            Haptic.Bind(miniGameButton);
             if (startButton != null) startButton.onClick.AddListener(Play);
             if (miniGameButton != null) miniGameButton.onClick.AddListener(OpenMiniGame);
             if (!showOnStart) gameObject.SetActive(false);

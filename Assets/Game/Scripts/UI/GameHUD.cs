@@ -1,6 +1,7 @@
 using System.Collections;
 using BallSortGame.Core;
 using BallSortGame.Gameplay;
+using BallSortGame.Haptics;
 using BallSortGame.MiniGame;
 using UnityEngine;
 using UnityEngine.UI;
@@ -21,6 +22,8 @@ namespace BallSortGame.UI
         [Tooltip("Top left: restarts the level.")]
         public Button resetButton;
         public Button settingsButton;
+        [Tooltip("Top left coin button: opens the mini game (Mana Flip).")]
+        public Button miniGameButton;
         public GameObject settingsPanel;
         public Button homeButton;
         public Button settingsCloseButton;
@@ -79,6 +82,7 @@ namespace BallSortGame.UI
                 SafeAreaFitter.Attach(transform.Find(bar));
             Hook(resetButton, () => game.Restart());
             Hook(settingsButton, () => SetSettings(!(settingsPanel != null && settingsPanel.activeSelf)));
+            Hook(miniGameButton, OpenMiniGame);
             Hook(settingsCloseButton, () => SetSettings(false));
             Hook(homeButton, GoHome);
             Hook(boosterInfoButton, () => Show(boosterInfoPanel, !(boosterInfoPanel != null && boosterInfoPanel.activeSelf)));
@@ -138,6 +142,14 @@ namespace BallSortGame.UI
             else game.StartLevel(1);
         }
 
+        /// <summary>Coin button: the Mana Flip board over the paused game (its close button comes back here).</summary>
+        void OpenMiniGame()
+        {
+            var manaFlip = FindFirstObjectByType<ManaFlipView>(FindObjectsInactive.Include);
+            if (manaFlip != null) manaFlip.Open();
+            else ShowToast("No mini game in this scene");
+        }
+
         void OnEnable()
         {
             if (game == null) return;
@@ -164,7 +176,9 @@ namespace BallSortGame.UI
 
         static void Hook(Button b, UnityEngine.Events.UnityAction a)
         {
-            if (b != null) b.onClick.AddListener(a);
+            if (b == null) return;
+            Haptic.Bind(b);
+            b.onClick.AddListener(a);
         }
 
         static void Show(GameObject go, bool on)
@@ -175,6 +189,12 @@ namespace BallSortGame.UI
         void SetSettings(bool on)
         {
             Show(settingsPanel, on);
+            // the mockup settings page stands alone over the dimmed board: the bars go away while it is up
+            foreach (string bar in new[] { "top_bar", "booster_bar" })
+            {
+                var t = transform.Find(bar);
+                if (t != null && (on || mainMenu == null || !mainMenu.gameObject.activeSelf)) t.gameObject.SetActive(!on);
+            }
             if (game != null) game.IsPaused = on;
         }
 

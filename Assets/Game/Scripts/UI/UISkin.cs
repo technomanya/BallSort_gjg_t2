@@ -21,15 +21,24 @@ namespace BallSortGame.UI
         public Sprite squareFrame;
         public Sprite greenCircle;
         public Sprite redCircle;
+        [Tooltip("Gold-framed stadium button (Button elipse): CONTINUE / home / try again, the LEVEL pill, prices and the coin balance.")]
+        public Sprite buttonPill;
 
         [Header("Popups")]
+        [Tooltip("Big gold-framed panel (Big pop up shaded): WELL DONE, OUT OF MOVES, the Mana Flip grid.")]
         public Sprite popupPanel;
+        [Tooltip("Small gold-framed panel (Small pop up shaded): booster bar, Mana Flip rewards.")]
         public Sprite pill;
+        [Tooltip("Flat pink panel without a frame (small pop up FLAT shade): the booster info panel.")]
+        public Sprite panelFlat;
         [Tooltip("Full-screen dim behind popups.")]
         public Sprite overlay;
 
         [Header("Settings page")]
+        [Tooltip("Gold-framed settings panel (Settings background).")]
         public Sprite settingsBackground;
+        [Tooltip("Full-screen flat pink (FLAT pink background for settings); kept for a frameless layout.")]
+        public Sprite settingsBackgroundFlat;
         [Tooltip("Striped level bar under each settings button.")]
         public Sprite settingsBar;
 
@@ -37,6 +46,16 @@ namespace BallSortGame.UI
         public Sprite rewardStar;
         public Sprite rewardPotion;
         public Sprite rewardCrystal;
+        [Tooltip("Seed / plant reward of the Mana Garden.")]
+        public Sprite rewardSeed;
+
+        [Header("Mana Flip")]
+        [Tooltip("Flat strip behind each reward row.")]
+        public Sprite rewardRow;
+        [Tooltip("Pink glow drawn behind a found reward on its card.")]
+        public Sprite rewardGlow;
+        [Tooltip("Dark tile shown under a revealed reward.")]
+        public Sprite cardBackFound;
 
         [Header("Items")]
         public Sprite coin;
@@ -65,6 +84,8 @@ namespace BallSortGame.UI
         public Sprite iconCheck;
         [Tooltip("Arrow (points up) drawn under one-way tubes; flipped for in-only tubes.")]
         public Sprite iconArrow;
+        [Tooltip("Sprout icon of the Mana Garden button.")]
+        public Sprite iconPlant;
 
         [Header("Lettering (Art/Fonts)")]
         [Tooltip("A TTF/OTF dropped into Art/Fonts; every Text uses it when set (Art/Fonts ships word pictures only).")]

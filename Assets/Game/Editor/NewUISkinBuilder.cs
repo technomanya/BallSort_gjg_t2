@@ -10,8 +10,7 @@ using UnityEngine.UI;
 namespace BallSortGame.EditorTools
 {
     /// <summary>
-    /// Applies the Art/UI/NewUI kit: sets 9-slice borders on the stretchable sprites, generates the settings page
-    /// gradient, fills Resources/UISkin.asset (used by the scene builder and by UI built at runtime, e.g. Jump Path)
+    /// Applies the Art/UI/NewUI kit: sets 9-slice borders on the stretchable sprites, fills Resources/UISkin.asset (used by the scene builder and by UI built at runtime, e.g. Jump Path)
     /// and reskins the GameHUD of the open scene in place, so a hand-edited scene keeps its layout.
     /// Menu: BallSort > Apply New UI. (BallSort > Rebuild HUD lays the HUD out afresh from the same skin.)
     /// </summary>
@@ -23,11 +22,12 @@ namespace BallSortGame.EditorTools
         internal const string SkinPath = "Assets/Game/Resources/UISkin.asset";
         const string FontsDir = "Assets/Game/Art/Fonts/";
 
-        // settings page gradient, sampled from the mockup (top pink-magenta to bottom purple)
-        static readonly Color GradientTop = new Color(0.80f, 0.16f, 0.58f, 1f);
-        static readonly Color GradientBottom = new Color(0.45f, 0.15f, 0.50f, 1f);
-
-        /// <summary>Per file: visible part of the texture (x, y from the bottom, width, height; null = whole) and border (left, bottom, right, top).</summary>
+        /// <summary>
+        /// Per file: visible part of the texture (x, y from the bottom, width, height; null = whole) and border
+        /// (left, bottom, right, top). The gold-framed panels carry a sparkle on the middle of each side, so they are
+        /// used at (or near) their own height and stretched sideways only; the stadium shapes (Button elipse, Reward
+        /// row) have borders of half their height, and the scene builders scale them so the ends stay round.
+        /// </summary>
         static readonly Dictionary<string, (RectInt? crop, Vector4 border)> Slices = new Dictionary<string, (RectInt?, Vector4)>
         {
             { "Button rectangle.PNG", (null, new Vector4(40, 40, 40, 40)) },
@@ -35,8 +35,14 @@ namespace BallSortGame.EditorTools
             { "Button rectangle super hard level.PNG", (null, new Vector4(40, 40, 40, 40)) },
             { "Button square.PNG", (null, new Vector4(45, 45, 45, 45)) },
             { "Square frame.PNG", (null, new Vector4(50, 50, 50, 50)) },
-            { "out of moves pop up background.png", (new RectInt(31, 154, 292, 130), new Vector4(45, 45, 45, 45)) },
-            { "well done pop up background.png", (new RectInt(31, 41, 292, 357), new Vector4(50, 50, 50, 50)) },
+            { "Button elipse.PNG", (null, new Vector4(40, 38, 40, 38)) },
+            { "Big pop up shaded.PNG", (null, new Vector4(70, 70, 70, 70)) },
+            { "Small pop up shaded.PNG", (null, new Vector4(60, 60, 60, 60)) },
+            { "small pop up FLAT shade.png", (null, new Vector4(40, 40, 40, 40)) },
+            { "Settings background.png", (null, new Vector4(24, 24, 24, 24)) },
+            { "FLAT pink background for settings.png", (null, new Vector4(24, 24, 24, 24)) },
+            { "Reward row.png", (null, new Vector4(29, 28, 29, 28)) },
+            { "Reward tile back.png", (null, new Vector4(20, 20, 20, 20)) },
         };
 
         [MenuItem("BallSort/Apply New UI")]
@@ -64,16 +70,24 @@ namespace BallSortGame.EditorTools
             skin.buttonRectRed = S("Button rectangle super hard level.PNG");
             skin.circleFrame = S("Circle frame.PNG");
             skin.squareFrame = S("Square frame.PNG");
-            skin.greenCircle = S("Green circle.PNG");
-            skin.redCircle = S("Red circle.PNG");
-            skin.popupPanel = S("well done pop up background.png");
-            skin.pill = S("out of moves pop up background.png");
+            skin.greenCircle = S("green dot.png");
+            skin.redCircle = S("red dot.png");
+            skin.buttonPill = S("Button elipse.PNG");
+            skin.popupPanel = S("Big pop up shaded.PNG");
+            skin.pill = S("Small pop up shaded.PNG");
+            skin.panelFlat = S("small pop up FLAT shade.png");
             skin.overlay = S("Background overlay (pop up ciktiginda ekranin kararmasi icin).png", BackgroundDir);
-            skin.settingsBackground = Gradient("settings_gradient.png", GradientTop, GradientBottom);
+            skin.settingsBackground = S("Settings background.png");
+            skin.settingsBackgroundFlat = S("FLAT pink background for settings.png");
             skin.settingsBar = S("sound_music setting.png");
             skin.rewardStar = S("reward star.PNG");
             skin.rewardPotion = S("reward potion.PNG");
             skin.rewardCrystal = S("reward crystal.PNG");
+            skin.rewardSeed = S("Seed plant reward.png");
+            skin.rewardRow = S("Reward row.png");
+            skin.rewardGlow = S("Reward glow.png");
+            skin.cardBackFound = S("Reward tile back.png");
+            skin.iconPlant = S("plant.png");
             skin.coin = S("Coin.PNG");
             skin.heart = S("Heart.PNG");
             skin.brokenHeart = S("Out of moves_broken heart.png");
@@ -268,35 +282,6 @@ namespace BallSortGame.EditorTools
             return AssetDatabase.LoadAssetAtPath<Sprite>(path);
         }
 
-        /// <summary>Writes (every time, so colour edits apply) a 4x256 vertical gradient PNG and imports it as a sprite.</summary>
-        static Sprite Gradient(string file, Color top, Color bottom)
-        {
-            string path = GeneratedDir + file;
-            Directory.CreateDirectory(GeneratedDir);
-            var tex = new Texture2D(4, 256, TextureFormat.RGBA32, false);
-            for (int y = 0; y < 256; y++)
-            {
-                var c = Color.Lerp(bottom, top, y / 255f);
-                for (int x = 0; x < 4; x++) tex.SetPixel(x, y, c);
-            }
-            tex.Apply();
-            File.WriteAllBytes(path, tex.EncodeToPNG());
-            Object.DestroyImmediate(tex);
-            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
-            var imp = AssetImporter.GetAtPath(path) as TextureImporter;
-            if (imp != null && (imp.textureType != TextureImporterType.Sprite || imp.mipmapEnabled || imp.wrapMode != TextureWrapMode.Clamp))
-            {
-                imp.textureType = TextureImporterType.Sprite;
-                imp.spriteImportMode = SpriteImportMode.Single;
-                imp.mipmapEnabled = false;
-                imp.wrapMode = TextureWrapMode.Clamp;
-                imp.filterMode = FilterMode.Bilinear;
-                imp.textureCompression = TextureImporterCompression.Uncompressed;
-                imp.SaveAndReimport();
-            }
-            return AssetDatabase.LoadAssetAtPath<Sprite>(path);
-        }
-
         /// <summary>
         /// Every kit texture becomes exactly one sprite covering the whole picture (the kit was auto-sliced on import,
         /// which cut icons such as haptic.png and the striped bar into pieces), cropped and bordered per <see cref="Slices"/>.
@@ -365,8 +350,8 @@ namespace BallSortGame.EditorTools
 
             // top bar
             IconButton(hud.settingsButton, skin.buttonSquare, skin.iconSettings, true);
-            IconButton(hud.homeButton, skin.buttonCircle, skin.iconHome);
-            if (hud.levelText != null) Bg(hud.levelText.GetComponentInParent<Image>(), skin.buttonRect, true);
+            IconButton(hud.miniGameButton, skin.buttonSquare, skin.coin, true);
+            if (hud.levelText != null) Bg(hud.levelText.GetComponentInParent<Image>(), skin.buttonPill, true);
 
             // boosters
             IconButton(hud.undoButton, skin.buttonSquare, skin.iconUndo, true);
@@ -377,17 +362,26 @@ namespace BallSortGame.EditorTools
             Badge(hud.undoCountText, skin.redCircle);
             Badge(hud.addTubeCountText, skin.redCircle);
             if (hud.boosterInfoButton != null) Bg(hud.boosterInfoButton.GetComponent<Image>(), skin.buttonCircle, false);
-            if (hud.boosterInfoPanel != null) Bg(hud.boosterInfoPanel.GetComponent<Image>(), skin.pill, true);
+            if (hud.boosterInfoPanel != null) Bg(hud.boosterInfoPanel.GetComponent<Image>(), skin.panelFlat, true);
+            var bar = hud.transform.Find("booster_bar");
+            if (bar != null) Bg(bar.GetComponent<Image>(), skin.pill, true);
 
-            if (hud.toast != null) Bg(hud.toast.GetComponent<Image>(), skin.pill, true);
+            if (hud.toast != null) Bg(hud.toast.GetComponent<Image>(), skin.buttonPill, true);
 
-            // popups
-            TextButton(hud.nextButton, skin.pill);
-            TextButton(hud.noMoveReplayButton, skin.pill);
-            TextButton(hud.noMoveHomeButton, skin.pill);
+            // settings page and popups
+            TextButton(hud.homeButton, skin.buttonPill);
+            if (hud.settingsCloseButton != null) IconButton(hud.settingsCloseButton, skin.buttonCircle, skin.iconUndo);
+            TextButton(hud.nextButton, skin.buttonPill);
+            TextButton(hud.noMoveReplayButton, skin.buttonPill);
+            TextButton(hud.noMoveHomeButton, skin.buttonPill);
             TextButton(hud.noMoveAddTubeButton, skin.buttonRect);
             TextButton(hud.noMoveUndoButton, skin.buttonRect);
             IconButton(hud.noMoveCloseButton, skin.buttonCircle, skin.iconClose);
+            foreach (var view in new[] { hud.successView, hud.noMoveView })
+            {
+                var panel = view != null ? view.transform.Find("panel") : null;
+                if (panel != null) Bg(panel.GetComponent<Image>(), skin.popupPanel, view == hud.noMoveView);
+            }
 
             EditorSceneManager.MarkSceneDirty(hud.gameObject.scene);
             Debug.Log("Apply New UI: HUD reskinned; save the scene to keep it.");
@@ -399,6 +393,7 @@ namespace BallSortGame.EditorTools
             img.sprite = sprite;
             img.color = Color.white;
             img.type = sliced ? Image.Type.Sliced : Image.Type.Simple;
+            if (sliced) BallSortSceneBuilder.RoundEnds(img);
             EditorUtility.SetDirty(img);
         }
 

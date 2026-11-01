@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using BallSortGame.Gameplay;
+using BallSortGame.Haptics;
 using BallSortGame.LevelEditor;
 using BallSortGame.UI;
 using UnityEngine;
@@ -49,6 +50,7 @@ namespace BallSortGame.MiniGame
         readonly List<Button> _cards = new List<Button>();
         readonly List<Image> _faces = new List<Image>();
         readonly List<Image> _backs = new List<Image>();
+        readonly List<Image> _glows = new List<Image>();
         readonly Image[][] _checks = new Image[ManaFlip.ItemKinds][];
         bool _busy;
         Coroutine _flashRoutine, _openRoutine;
@@ -156,6 +158,7 @@ namespace BallSortGame.MiniGame
                 Flash(rules.CanPlay ? "Round over" : LockedMessage());
                 return;
             }
+            Haptic.Play(HapticType.ButtonClick);
             StartCoroutine(FlipRoutine(card, result, item, reward));
         }
 
@@ -167,6 +170,7 @@ namespace BallSortGame.MiniGame
             if (result == ManaFlip.FlipResult.Reward)
             {
                 Flash($"{ItemNames[item]} x{rules.MatchCount}:  +{reward} coins!");
+                Haptic.Play(HapticType.Reward);
                 // every open copy of the matched item pops; the one just turned last
                 for (int i = 0; i < _cards.Count; i++)
                     if (i != card && rules.IsRevealed(i) && rules.Cards[i] == item) StartCoroutine(Punch(_faces[i].rectTransform));
@@ -229,7 +233,13 @@ namespace BallSortGame.MiniGame
         {
             var face = _faces[card];
             face.gameObject.SetActive(open);
-            _backs[card].color = open ? new Color(1f, 1f, 1f, 0.6f) : Color.white;
+            // a found card shows the kit's dark tile with the pink glow behind the item; without those sprites it just fades
+            var back = _backs[card];
+            Sprite found = _skin != null ? _skin.cardBackFound : null;
+            Sprite closed = _skin != null ? _skin.buttonSquare : null;
+            if (found != null && closed != null) { back.sprite = open ? found : closed; back.color = Color.white; }
+            else back.color = open ? new Color(1f, 1f, 1f, 0.6f) : Color.white;
+            if (card < _glows.Count && _glows[card] != null) _glows[card].gameObject.SetActive(open && _glows[card].sprite != null);
             if (!open) return;
             int value = rules.Cards[card];
             face.sprite = ItemSprite(value);
@@ -307,6 +317,7 @@ namespace BallSortGame.MiniGame
                 img.color = Color.white;
                 img.type = sliced ? Image.Type.Sliced : Image.Type.Simple;
                 img.preserveAspect = !sliced;
+                if (sliced) RoundEnds(img, size.y);
             }
             else
             {
@@ -315,6 +326,14 @@ namespace BallSortGame.MiniGame
                 img.type = Image.Type.Sliced;
             }
             return img;
+        }
+
+        /// <summary>A sliced stadium sprite (borders of half its height: the gold pill, the reward strip) keeps round ends at any height.</summary>
+        static void RoundEnds(Image img, float height)
+        {
+            var s = img.sprite;
+            float ends = s.border.y + s.border.w;
+            img.pixelsPerUnitMultiplier = ends >= s.rect.height * 0.9f && height > 0f ? ends / height : 1f;
         }
 
         static Text Label(string name, Transform parent, Vector2 pos, Vector2 size, string text, int fontSize, Color color, TextAnchor anchor = TextAnchor.MiddleCenter)
@@ -349,6 +368,7 @@ namespace BallSortGame.MiniGame
             var bg = Img(name, parent, _skin != null ? _skin.buttonSquare : null, Card, pos, new Vector2(size, size), true);
             var b = bg.gameObject.AddComponent<Button>();
             b.targetGraphic = bg;
+            Haptic.Bind(b);
             b.onClick.AddListener(onClick);
             if (icon != null) Img("icon", bg.transform, icon, Color.white, new Vector2(0f, 4f), new Vector2(size * 0.68f, size * 0.68f)).raycastTarget = false;
             else Label("label", bg.transform, Vector2.zero, Vector2.zero, fallbackLabel, Mathf.RoundToInt(size * 0.45f), Color.white);
@@ -377,7 +397,10 @@ namespace BallSortGame.MiniGame
             _panel = panel.gameObject;
             var p = panel.transform;
 
-            Sprite pill = _skin != null ? _skin.pill : null;
+            Sprite pill = _skin != null ? _skin.pill : null;                                   // small gold-framed panel
+            Sprite goldPill = _skin != null && _skin.buttonPill != null ? _skin.buttonPill : pill;   // gold stadium: prices, balance, flash
+            Sprite bigPanel = _skin != null && _skin.popupPanel != null ? _skin.popupPanel : pill;
+            Sprite rowStrip = _skin != null && _skin.rewardRow != null ? _skin.rewardRow : (_skin != null ? _skin.buttonRect : null);
             Sprite rect = _skin != null ? _skin.buttonRect : null;
             Sprite coinSprite = _skin != null ? _skin.coin : null;
 
@@ -393,7 +416,7 @@ namespace BallSortGame.MiniGame
             for (int item = 0; item < ManaFlip.ItemKinds; item++)
             {
                 float y = 108f - 108f * item;
-                var row = Img("row_" + ItemNames[item], rewards.transform, rect, Card, new Vector2(0f, y), new Vector2(700f, 92f), true);
+                var row = Img("row_" + ItemNames[item], rewards.transform, rowStrip, Card, new Vector2(0f, y), new Vector2(700f, 92f), true);
                 _checks[item] = new Image[rules.MatchCount];
                 for (int c = 0; c < rules.MatchCount; c++)
                 {
@@ -405,14 +428,16 @@ namespace BallSortGame.MiniGame
                     check.gameObject.SetActive(false);
                     _checks[item][c] = check;
                 }
-                var price = Img("price", row.transform, pill, Navy, new Vector2(231f, 0f), new Vector2(200f, 78f), true);
+                var price = Img("price", row.transform, goldPill, Navy, new Vector2(231f, 0f), new Vector2(200f, 78f), true);
                 price.raycastTarget = false;
                 Img("coin", price.transform, coinSprite, Gold, new Vector2(-62f, 0f), new Vector2(58f, 58f)).raycastTarget = false;
                 _prices[item] = Label("amount", price.transform, new Vector2(24f, 2f), new Vector2(130f, 70f), rules.Reward(item).ToString(), 48, Color.white);
             }
 
             // ---- card grid: 3 columns x 4 rows
-            var grid = Img("grid", p, pill, Panel, new Vector2(0f, -349f), new Vector2(776f, 873f), true);
+            // the big panel is drawn scaled (not sliced) so the sparkles on its sides keep their shape; its aspect already matches
+            var grid = Img("grid", p, bigPanel, Panel, new Vector2(0f, -349f), bigPanel != null ? new Vector2(925f, 1040f) : new Vector2(776f, 873f), bigPanel == null);   // ~50 px transparent margin around the frame
+            grid.preserveAspect = false;
             int cols = 3;
             int rows = Mathf.CeilToInt(rules.CardCount / (float)cols);
             float pitchX = 215f, pitchY = 210f;
@@ -426,22 +451,26 @@ namespace BallSortGame.MiniGame
                 var colors = b.colors; colors.disabledColor = Color.white; b.colors = colors;   // open cards keep their look
                 int index = i;
                 b.onClick.AddListener(() => Flip(index));
+                var glow = Img("glow", back.transform, _skin != null ? _skin.rewardGlow : null, Color.clear, new Vector2(0f, 2f), new Vector2(196f, 196f));
+                glow.raycastTarget = false;
+                glow.gameObject.SetActive(false);
                 var face = Img("face", back.transform, null, Gold, new Vector2(0f, 2f), new Vector2(124f, 124f));
                 face.raycastTarget = false;
                 face.gameObject.SetActive(false);
                 _cards.Add(b);
                 _backs.Add(back);
+                _glows.Add(glow);
                 _faces.Add(face);
             }
 
             // ---- footer: balance and the play / progress line
-            var balance = Img("coins", p, pill, Navy, new Vector2(0f, -860f), new Vector2(330f, 110f), true);
+            var balance = Img("coins", p, goldPill, Navy, new Vector2(0f, -860f), new Vector2(330f, 110f), true);
             Img("coin", balance.transform, coinSprite, Gold, new Vector2(-105f, 0f), new Vector2(84f, 84f)).raycastTarget = false;
             _coinsText = Label("text", balance.transform, new Vector2(40f, 2f), new Vector2(200f, 80f), "0", 52, Color.white);
             _statusText = Label("status", p, new Vector2(0f, -960f), new Vector2(980f, 70f), "", 38, Color.white);
 
             // ---- flash message
-            var flashBg = Img("flash", root, pill, new Color(0f, 0f, 0f, 0.75f), new Vector2(0f, -720f), new Vector2(960f, 110f), true);
+            var flashBg = Img("flash", root, goldPill, new Color(0f, 0f, 0f, 0.75f), new Vector2(0f, -720f), new Vector2(960f, 110f), true);
             flashBg.raycastTarget = false;
             _flash = Label("text", flashBg.transform, Vector2.zero, new Vector2(900f, 90f), "", 44, Gold);
             flashBg.gameObject.SetActive(false);

@@ -19,16 +19,23 @@ MonoBehaviour:
   buttonRectRed: {fileID: 8339468318816200683, guid: 15c1b32dfbe5f4c47b171b80d82efd7a, type: 3}
   circleFrame: {fileID: 4077075306979237286, guid: 2807b4a8b2f686448952b17ea72dc10b, type: 3}
   squareFrame: {fileID: 6140779336936362642, guid: ee4a9933042bcce43a0e1a3057444518, type: 3}
-  greenCircle: {fileID: -1617176350657224455, guid: d852637a6e328d749a07cf1929f7df86, type: 3}
-  redCircle: {fileID: 8157113302327534846, guid: ad9c74c946935d54798cfde4422f9b42, type: 3}
-  popupPanel: {fileID: -3677275728376508240, guid: faf3d426abe38bf4891fc6f2748e2be1, type: 3}
-  pill: {fileID: 2782890316247053386, guid: 2685ed87968224d4f83daa8f5c207674, type: 3}
+  greenCircle: {fileID: -4005616461697300103, guid: 7f1ac639e187b5e40a4ab3f5e4d5676b, type: 3}
+  redCircle: {fileID: 4440765403029788085, guid: f0cb6c91e4d1b1140b7a55f3a031ed53, type: 3}
+  buttonPill: {fileID: -960109724082120967, guid: a63db61880f97c64db2b9fc508f6fd4f, type: 3}
+  popupPanel: {fileID: 7465084024967165542, guid: ffc69837ec1fdee43a0b2dd99727854d, type: 3}
+  pill: {fileID: -5385997019016839393, guid: 8d235de94ad335746a290ec2fe4837a4, type: 3}
+  panelFlat: {fileID: 8573436538733981863, guid: ea9c7d1738071e541bc1527b085262ef, type: 3}
   overlay: {fileID: -8267787123667906418, guid: 4911e2f46dd91954cae6bde50d620c9e, type: 3}
-  settingsBackground: {fileID: 6696890525836337448, guid: a5d151e88b6a1274ca44f48b3ac8d6f0, type: 3}
+  settingsBackground: {fileID: -6076233374363088374, guid: 9818863d420c4d042b15d8a69870ca7b, type: 3}
+  settingsBackgroundFlat: {fileID: 7658782122812223523, guid: 52300a270691dcf4bb8f30e8a4fc9f10, type: 3}
   settingsBar: {fileID: 9214711633586681329, guid: 815f1b2a749f6f9439bd77811c67e89f, type: 3}
   rewardStar: {fileID: -8506573586941413340, guid: a63a4b9cdb623924b9b8f23cc49f31b3, type: 3}
   rewardPotion: {fileID: -3177723215961390456, guid: 9277a42ab846dea44946577f393f59bc, type: 3}
   rewardCrystal: {fileID: 3696492910410268661, guid: 24c06314d7f552a45a1766a2b5ef943b, type: 3}
+  rewardSeed: {fileID: 7211364617816052954, guid: 1c2c37ce411556d4785dd3f1e66f0c59, type: 3}
+  rewardRow: {fileID: 8660204226015591170, guid: ad1fe07afc278ae4ababd5dc8219cf2a, type: 3}
+  rewardGlow: {fileID: 4697805140899592234, guid: 037d4c8069a9df54f8554e84319cce07, type: 3}
+  cardBackFound: {fileID: 4058467324566763456, guid: 36e63886a009dd94e986c4d1d14c8858, type: 3}
   coin: {fileID: -3338749442709606003, guid: 1b3337b78ae19d648a70b5e88317b086, type: 3}
   heart: {fileID: 4606908045521496030, guid: c1a9aa784d8102c479cf1b172087bcc6, type: 3}
   brokenHeart: {fileID: 1391684605842844687, guid: 8f16546e47c165a41a1ace1628c3e4e2, type: 3}
@@ -49,6 +56,7 @@ MonoBehaviour:
   iconHaptic: {fileID: 968979224951117750, guid: 2dbef9619c6212e488c3ccd60ff64114, type: 3}
   iconCheck: {fileID: -5991587696965077061, guid: f42060b76e9f4cd43bf88f6f5576c123, type: 3}
   iconArrow: {fileID: -33067239104068978, guid: 109ff149917054b49bf2aa831fcb0886, type: 3}
+  iconPlant: {fileID: 8591533231565066105, guid: 6cfa35e627f91c149ad78c02dcc37e1f, type: 3}
   font: {fileID: 12800000, guid: 470641a6864c13048bfa0d7b4ee5de35, type: 3}
   wordLevel: {fileID: -5000488056336954749, guid: a2b18e520af830d49bfe08c1786ab2fe, type: 3}
   wordContinue: {fileID: -2271835489614291112, guid: fb270011472fc4b409410494d57d03f2, type: 3}

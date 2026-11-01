@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: ad9c74c946935d54798cfde4422f9b42
+guid: 52300a270691dcf4bb8f30e8a4fc9f10
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 8157113302327534846
-    second: Red circle_0
+      213: 7658782122812223523
+    second: FLAT pink background for settings_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,23 +126,23 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Red circle_0
+      name: FLAT pink background for settings_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 65
-        height: 64
+        width: 668
+        height: 1080
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
-      border: {x: 0, y: 0, z: 0, w: 0}
+      border: {x: 24, y: 24, z: 24, w: 24}
       customData: 
       outline: []
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: ef4a8d98453e33170800000000000000
-      internalID: 8157113302327534846
+      spriteID: 320b55243c5794a60800000000000000
+      internalID: 7658782122812223523
       vertices: []
       indices: 
       edges: []
@@ -151,7 +151,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: e8df3aa4fe91938408cf7ca1da11be5d
+    spriteID: 343925b043d8a6446a3a1715dde65582
     internalID: 0
     vertices: []
     indices: 
@@ -161,7 +161,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Red circle_0: 8157113302327534846
+      FLAT pink background for settings_0: 7658782122812223523
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

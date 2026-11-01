@@ -1,4 +1,5 @@
 using System;
+using BallSortGame.Haptics;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -56,7 +57,9 @@ namespace BallSortGame.UI
         {
             if (row == null) return;
             if (row.slider != null) row.slider.onValueChanged.AddListener(v => Set(row, key, v));
-            if (row.button != null) row.button.onClick.AddListener(() => Toggle(row, key));
+            if (row.button == null) return;
+            BallSortGame.Haptics.Haptic.Bind(row.button);
+            row.button.onClick.AddListener(() => Toggle(row, key));
         }
 
         void Load(Row row, string key)
@@ -83,6 +86,7 @@ namespace BallSortGame.UI
             PlayerPrefs.Save();
             Paint(row, v);
             if (key == SoundKey) AudioListener.volume = v;
+            if (key == HapticKey && v > 0f) BallSortGame.Haptics.Haptic.Play(HapticType.ButtonClick);   // the switch itself is felt (reference VibrationToggle)
         }
 
         void Paint(Row row, float v)

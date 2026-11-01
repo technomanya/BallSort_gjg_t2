@@ -56,7 +56,7 @@ namespace BallSortGame.EditorTools
             menu.pulse = hint.rectTransform;
 
             // level pill above the hint (the HUD's own pill is hidden while the menu is up)
-            var levelBg = BallSortSceneBuilder.MakeImage("level_pill", rt, Center, Center, Center, new Vector2(0f, -380f), new Vector2(300f, 116f), skin.buttonRect, Color.white, Image.Type.Sliced);
+            var levelBg = BallSortSceneBuilder.MakeImage("level_pill", rt, Center, Center, Center, new Vector2(0f, -380f), new Vector2(400f, 150f), skin.buttonPill != null ? skin.buttonPill : skin.buttonRect, Color.white, Image.Type.Sliced);
             levelBg.raycastTarget = false;
             menu.levelText = BallSortSceneBuilder.MakeText("text", levelBg.rectTransform, Vector2.zero, Vector2.one, Center, new Vector2(0f, 2f), new Vector2(-24f, 0f), "LEVEL 1", 54, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
             BallSortSceneBuilder.AddShadow(menu.levelText.gameObject);
@@ -72,7 +72,7 @@ namespace BallSortGame.EditorTools
             menu.hideWhileOpen = hidden.ToArray();
 
             // coin balance pill, top left
-            var pill = BallSortSceneBuilder.MakeImage("coins", rt, new Vector2(0f, 1f), new Vector2(0f, 1f), Center, new Vector2(200f, -133f), new Vector2(330f, 110f), skin.pill, Color.white, Image.Type.Sliced);
+            var pill = BallSortSceneBuilder.MakeImage("coins", rt, new Vector2(0f, 1f), new Vector2(0f, 1f), Center, new Vector2(200f, -133f), new Vector2(330f, 110f), skin.buttonPill != null ? skin.buttonPill : skin.pill, Color.white, Image.Type.Sliced);
             pill.raycastTarget = false;
             BallSortSceneBuilder.Decor("coin", pill.transform, skin.coin, new Vector2(-105f, 0f), 84f);
             menu.coinsText = BallSortSceneBuilder.MakeText("text", pill.transform, Vector2.zero, Vector2.one, Center, new Vector2(40f, 2f), new Vector2(-80f, 0f), "0", 52, FontStyle.Bold, TextAnchor.MiddleCenter, Color.white);
@@ -90,7 +90,7 @@ namespace BallSortGame.EditorTools
         /// <summary>Green "MINI GAME" button with a coin, under the tap hint; it catches its own taps, so START does not fire.</summary>
         internal static Button MiniGameButton(RectTransform menuRoot, UISkin skin)
         {
-            var btn = BallSortSceneBuilder.PillButton("btn - mini_game", menuRoot, new Vector2(0f, -720f), new Vector2(560f, 150f), skin.buttonRectGreen != null ? skin.buttonRectGreen : skin.pill, "MINI GAME", 54);
+            var btn = BallSortSceneBuilder.PillButton("btn - mini_game", menuRoot, new Vector2(0f, -720f), new Vector2(560f, 150f), skin.buttonRectGreen != null ? skin.buttonRectGreen : skin.buttonPill, "MINI GAME", 54);
             var label = (RectTransform)btn.transform.Find("label");
             label.offsetMin = new Vector2(110f, label.offsetMin.y);   // room for the coin on the left
             BallSortSceneBuilder.Decor("coin", btn.transform, skin.coin, new Vector2(-190f, 4f), 96f).raycastTarget = false;
