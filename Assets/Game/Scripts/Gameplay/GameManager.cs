@@ -12,7 +12,7 @@ namespace BallSortGame.Gameplay
     /// StartGame -> build tubes (ComputeTubePos / TubeLayout) -> OnTubeClick (select / move) ->
     /// OnMoveEnd (tube-full check, win check) -> EndGame; Undo with a RecordStep stack; AddTube; CheckNoMove via the solver.
     /// </summary>
-    public class GameMgr : MonoBehaviour
+    public class GameManager : MonoBehaviour
     {
         public struct RecordStep
         {
@@ -25,8 +25,18 @@ namespace BallSortGame.Gameplay
 
         [Header("Skin")]
         public Sprite tubeSprite;
+        [Tooltip("Glass of the little tube the little-tube booster adds (Art/Tubes/Tube short); its height comes from the sprite.")]
+        public Sprite smallTubeSprite;
+        [Tooltip("Moves the ball in the little tube up (+) or down (-) from where the big tubes hold their bottom ball.")]
+        public float SmallTubeBallOffset = 0f;
+        [Tooltip("Arrow (pointing up) shown under one-way tubes; UISkin.iconArrow is used when empty.")]
+        public Sprite arrowSprite;
+        [Tooltip("Cover drawn over a hidden tube (Art/Tubes/Hidden tube) until a neighbouring tube is completed; the glass tinted green when empty.")]
+        public Sprite hiddenTubeSprite;
         [Tooltip("Color index 1 uses element 0, index 2 element 1, ...")]
         public Sprite[] ballSprites;
+        [Tooltip("Weight drawn over a heavy ball (Art/Balls/NewBalls/Cannonball): a heavy ball sits at the bottom of its tube and only moves into an empty tube.")]
+        public Sprite heavyBallSprite;
         public float TubeWidth = 1.81f;
         public float TubeHeight = 4.8f;
         public float TubeSpace = 0.42f;
@@ -44,10 +54,16 @@ namespace BallSortGame.Gameplay
         public float WinDelay = 0.6f;
 
         [Header("Level")]
-        public string levelPackResource = "data/lv_1_100";
-        [Min(1)] public int startLevel = 1;
+        public string levelPackResource = "data/levels";
         public int MaxAddTube = 1;
+        [Tooltip("Little tubes per level: one ball each, a parking spot that never counts as a finished tube.")]
+        public int MaxAddSmallTube = 1;
         public int UndoLimit = 5;
+
+        [Header("Editor Test")]
+        [Tooltip("Unity Editor only: start at Test Level instead of the saved level. Wins are not saved while this is on.")]
+        public bool useTestLevel;
+        [Min(1)] public int testLevel = 1;
 
         [Header("Scene")]
         public Camera cam;
@@ -60,17 +76,40 @@ namespace BallSortGame.Gameplay
         public float TopBarScreenFraction = 0.075f;
         [Tooltip("Extra world units kept between the highest point of a flight arc and whatever is above it.")]
         public float ArcSafetyMargin = 0.15f;
+        /// <summary>Lower bound for the fitted camera size; the level editor raises it so its controls stay clear of the board. Not saved.</summary>
+        [NonSerialized] public float MinCameraSize;
 
         // ---------- events for the HUD ----------
         public event Action<int, LevelData> LevelStarted;
         public event Action<int, int> MovesChanged;   // (moves, undosLeft)
         public event Action<int> AddTubeChanged;      // add tubes left
+        public event Action<int> SmallTubeChanged;    // little tubes left
         public event Action<int> LevelWon;
+        public event Action<Tube> TubeCompleted;      // a move left the tube full of one colour
+        public event Action<Tube> HiddenTubeOpened;   // a completed neighbour opened a hidden tube
         public event Action NoMoves;
         public event Action<string> Toast;
 
+        const string SavedLevelKey = "ballsort.level";
+
+        /// <summary>Level the game opens at: one past the highest level won, 1 for a new player. Kept in PlayerPrefs.</summary>
+        public static int SavedLevel => Mathf.Max(1, PlayerPrefs.GetInt(SavedLevelKey, 1));
+
+        public static void ClearSavedLevel()
+        {
+            PlayerPrefs.DeleteKey(SavedLevelKey);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>True while the Editor Test level is in use; progress is not saved then.</summary>
+        public bool IsTestLevelOn => Application.isEditor && useTestLevel;
+
         public int CurrentLevel { get; private set; }
         public LevelData CurrentLevelData { get; private set; }
+        /// <summary>Tries of <see cref="CurrentLevel"/> before this one: 0 on the first try, +1 per restart or retry after a dead end.</summary>
+        public int CurrentAttempt { get; private set; }
+        /// <summary>A win on the first try (see <see cref="CurrentAttempt"/>) in a real play, not a test or a bot run.</summary>
+        public bool IsOneShotPlay => CurrentAttempt == 0 && !IsTestLevelOn && OverrideLevel == null && !IsBotPlaying;
         /// <summary>Loaded level pack (null when it failed to load).</summary>
         public StageData Stage => _stage;
         /// <summary>Level played instead of the pack slot (set by the in-app level editor's Test); null = play the pack.</summary>
@@ -79,6 +118,11 @@ namespace BallSortGame.Gameplay
         public bool IsPaused { get => _isPause; set { _isPause = value; if (value) ClearSelection(); } }
         public int UndosLeft => Mathf.Max(0, UndoLimit - _undosUsed);
         public int AddTubesLeft => Mathf.Max(0, MaxAddTube - _addedTubes);
+        public int SmallTubesLeft => Mathf.Max(0, MaxAddSmallTube - _addedSmallTubes);
+        /// <summary>True while the level bot drives the board: taps are ignored and wins do not save progress.</summary>
+        public bool IsBotPlaying { get; set; }
+        /// <summary>Capacity of the tubes on the board.</summary>
+        public int Capacity => _capacity;
 
         readonly List<Tube> _tubes = new List<Tube>();
         readonly Stack<RecordStep> _record = new Stack<RecordStep>();
@@ -94,6 +138,7 @@ namespace BallSortGame.Gameplay
         int _sumStep;
         int _undosUsed;
         int _addedTubes;
+        int _addedSmallTubes;
         int _capacity;
         Coroutine _noMoveCheck;
 
@@ -114,24 +159,42 @@ namespace BallSortGame.Gameplay
             _stage = LevelLoader.LoadStage(levelPackResource);
             if (_stage == null || _stage.Levels.Count == 0)
             {
-                Debug.LogError("GameMgr: no levels loaded.");
+                Debug.LogError("GameManager: no levels loaded.");
                 return;
             }
-            StartLevel(startLevel);
+            StartLevel(IsTestLevelOn ? testLevel : SavedLevel);
         }
 
         void Update()
         {
-            if (_isPause || _gameOver) return;
+            if (_isPause || _gameOver || IsBotPlaying) return;
             if (!Input.GetMouseButtonDown(0)) return;
-            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
-            if (EventSystem.current != null && Input.touchCount > 0 && EventSystem.current.IsPointerOverGameObject(Input.GetTouch(0).fingerId)) return;
+            if (IsPointerOverUi()) return;
 
             Vector3 wp = cam.ScreenToWorldPoint(Input.mousePosition);
             var hit = Physics2D.OverlapPoint(new Vector2(wp.x, wp.y));
             if (hit == null) return;
             var tube = hit.GetComponent<Tube>();
             if (tube != null) OnTubeClick(tube);
+        }
+
+        /// <summary>
+        /// True when the tap that is being handled landed on UI. With a touch the EventSystem is asked about that finger:
+        /// the parameterless <see cref="EventSystem.IsPointerOverGameObject()"/> is the mouse pointer, which on Android
+        /// (and so in emulators such as BlueStacks) is only refreshed on frames without a touch, so it still reports the
+        /// UI button of the previous tap when the next tap starts on the board.
+        /// </summary>
+        public static bool IsPointerOverUi()
+        {
+            var es = EventSystem.current;
+            if (es == null) return false;
+            if (Input.touchCount > 0)
+            {
+                for (int i = 0; i < Input.touchCount; i++)
+                    if (es.IsPointerOverGameObject(Input.GetTouch(i).fingerId)) return true;
+                return false;
+            }
+            return es.IsPointerOverGameObject();
         }
 
         // =====================================================================
@@ -153,12 +216,37 @@ namespace BallSortGame.Gameplay
             _attemptByLevel.TryGetValue(level, out int attempt);
             _lastSeedByLevel.TryGetValue(level, out int lastSeed);
             CurrentLevelData = slot.ForAttempt(attempt, attempt == 0 ? -1 : lastSeed, _seedRng, out int seedIndex);
+            CurrentAttempt = attempt;
             _attemptByLevel[level] = attempt + 1;
             _lastSeedByLevel[level] = seedIndex;
-            StartGameInternal(CurrentLevelData);
-            LevelStarted?.Invoke(CurrentLevel, CurrentLevelData);
+            Begin(CurrentLevelData);
+        }
+
+        /// <summary>
+        /// Plays one specific fill of a pack level: <paramref name="seedIndex"/> 0 is the main seed, 1.. the variants,
+        /// 1000+ the dlb fills (see <see cref="LevelData.ForAttempt"/>). Ignores the editor override level and leaves the
+        /// retry counters alone. Used by the level bot.
+        /// </summary>
+        public void StartLevel(int level, int seedIndex)
+        {
+            if (_stage == null || _stage.Levels.Count == 0) return;
+            CurrentLevel = level;
+            CurrentAttempt = 0;
+            int idx = ((level - 1) % _stage.Levels.Count + _stage.Levels.Count) % _stage.Levels.Count;
+            var slot = _stage.Levels[idx];
+            CurrentLevelData = seedIndex >= 1000 && slot.DlbVariants != null && slot.DlbVariants.Count > 0
+                ? slot.DlbVariants[Mathf.Clamp(seedIndex - 1000, 0, slot.DlbVariants.Count - 1)]
+                : slot.SeedAt(seedIndex);
+            Begin(CurrentLevelData);
+        }
+
+        void Begin(LevelData data)
+        {
+            StartGameInternal(data);
+            LevelStarted?.Invoke(CurrentLevel, data);
             MovesChanged?.Invoke(_sumStep, UndosLeft);
             AddTubeChanged?.Invoke(AddTubesLeft);
+            SmallTubeChanged?.Invoke(SmallTubesLeft);
         }
 
         /// <summary>
@@ -174,8 +262,58 @@ namespace BallSortGame.Gameplay
             StartLevel(lv);
         }
 
+        /// <summary>
+        /// Level editor: shows a layout on the real board without starting a game. Tubes are bottom-first; a cell
+        /// below 1 is an unknown ("?") slot the generator fills later. The board stays paused until
+        /// <see cref="StartLevel"/> or <see cref="SetOverrideLevel"/> brings the game back.
+        /// </summary>
+        public void Preview(List<List<int>> tubesBottomFirst, int capacity) => Preview(tubesBottomFirst, capacity, null, null);
+
+        /// <inheritdoc cref="Preview(List{List{int}}, int)"/>
+        /// <param name="kinds">Per-tube <see cref="TubeKind"/> as ints (null = all normal).</param>
+        /// <param name="heavy">Per-tube 0/1: the bottom ball is heavy (null = none).</param>
+        public void Preview(List<List<int>> tubesBottomFirst, int capacity, IList<int> kinds, IList<int> heavy)
+        {
+            if (_noMoveCheck != null) { StopCoroutine(_noMoveCheck); _noMoveCheck = null; }
+            StopAllCoroutines();
+            ClearTubes();
+            _record.Clear();
+            _curTube = null;
+            _gameOver = false;
+            _isPause = true;
+            _capacity = Mathf.Max(1, capacity);
+            for (int i = 0; i < tubesBottomFirst.Count; i++)
+            {
+                var kind = kinds != null && i < kinds.Count ? (TubeKind)kinds[i] : TubeKind.Normal;
+                var tube = CreateTube(i, kind);
+                tube.SetBalls(tubesBottomFirst[i], v => v > 0 ? CreateBall(v) : CreateUnknownBall());
+                if (heavy != null && i < heavy.Count && heavy[i] != 0 && tube.Count > 0) tube.Balls[0].SetHeavy(true, heavyBallSprite);
+                if (tube.IsHiddenTube) tube.SetCoverAlpha(0.55f);   // see-through: the designer paints the balls under it
+            }
+            ComputeTubePos(animate: false);
+        }
+
+        /// <summary>Grey ball with a "?" for the editor's hidden ("?") cells in the preview.</summary>
+        Ball CreateUnknownBall()
+        {
+            Ball ball = ballPrefab != null
+                ? Instantiate(ballPrefab)
+                : new GameObject("Ball", typeof(SpriteRenderer)).AddComponent<Ball>();
+            ball.Setup(-1, HiddenBallSprite, 2);
+            ball.name = "Ball_unknown";
+            ball.Hide(HiddenBallSprite);
+            return ball;
+        }
+
         public void Restart() => StartLevel(CurrentLevel);
         public void NextLevel() => StartLevel(CurrentLevel + 1);
+
+        /// <summary>Editor test: plays <see cref="testLevel"/> now and turns Test Level on, so wins are not saved.</summary>
+        public void PlayTestLevel()
+        {
+            useTestLevel = true;
+            StartLevel(testLevel);
+        }
 
         void StartGameInternal(LevelData level)
         {
@@ -186,6 +324,7 @@ namespace BallSortGame.Gameplay
             _sumStep = 0;
             _undosUsed = 0;
             _addedTubes = 0;
+            _addedSmallTubes = 0;
             _curTube = null;
             _gameOver = false;
             _isPause = false;
@@ -193,17 +332,64 @@ namespace BallSortGame.Gameplay
 
             for (int i = 0; i < level.Tubes.Count; i++)
             {
-                var tube = CreateTube(i);
+                var tube = CreateTube(i, level.KindOf(i));
                 // level tubes are listed top-first; the Tube wants bottom-first colors
                 var topFirst = level.Tubes[i];
                 var bottomFirst = new List<int>(topFirst.Count);
-                for (int j = topFirst.Count - 1; j >= 0; j--) if (topFirst[j] > 0) bottomFirst.Add(topFirst[j]);
+                var hiddenBottomFirst = new List<bool>(topFirst.Count);
+                for (int j = topFirst.Count - 1; j >= 0; j--)
+                {
+                    if (topFirst[j] <= 0) continue;
+                    bottomFirst.Add(topFirst[j]);
+                    hiddenBottomFirst.Add(level.IsHidden(i, j));
+                }
                 tube.SetBalls(bottomFirst, CreateBall);
+                // hidden balls (the editor's "?" cells): grey until they become the top ball of their tube
+                for (int k = 0; k < hiddenBottomFirst.Count; k++)
+                    if (hiddenBottomFirst[k]) tube.Balls[k].Hide(HiddenBallSprite);
+                // heavy ball: the bottom ball wears the weight and only ever moves into an empty tube
+                if (level.IsHeavyBottom(i) && tube.Count > 0) tube.Balls[0].SetHeavy(true, heavyBallSprite);
+                tube.RevealTop();
+                if (tube.IsCompleted) tube.RevealAll();
             }
+            OpenHiddenTubes(animate: false);   // a tube completed from the start opens its neighbours at once
             ComputeTubePos(animate: false);
         }
 
-        Tube CreateTube(int index)
+        /// <summary>Sprite shown for a hidden ball (tinted grey with a "?" by <see cref="Ball.Hide"/>).</summary>
+        Sprite HiddenBallSprite => BallSpriteFor(1);
+
+        Sprite ArrowSprite => arrowSprite != null ? arrowSprite : UI.UISkin.Current != null ? UI.UISkin.Current.iconArrow : null;
+
+        Tube CreateTube(int index, TubeKind kind = TubeKind.Normal)
+        {
+            var tube = NewTube();
+            tube.Setup(index, _capacity, tubeSprite, 3);
+            tube.SetKind(kind, ArrowSprite, hiddenTubeSprite);
+            _tubes.Add(tube);
+            return tube;
+        }
+
+        /// <summary>
+        /// The little tube: one ball, short glass standing on the row's floor (see <see cref="ComputeTubePos"/>), with
+        /// lifted balls rising as high as in the big tubes so flights look the same.
+        /// </summary>
+        Tube CreateSmallTube(int index)
+        {
+            var tube = NewTube();
+            float h = smallTubeSprite != null ? smallTubeSprite.bounds.size.y : TubeHeight;
+            float drop = (TubeHeight - h) / 2f;   // how much lower its centre sits than a big tube's
+            tube.TubeHeight = h;
+            tube.FirstBallY = FirstBallY + drop + SmallTubeBallOffset;
+            tube.LiftY = LiftY + drop;
+            tube.Setup(index, 1, smallTubeSprite != null ? smallTubeSprite : tubeSprite, 3);
+            tube.SetKind(TubeKind.Spare, null);
+            tube.name = $"SmallTube_{index}";
+            _tubes.Add(tube);
+            return tube;
+        }
+
+        Tube NewTube()
         {
             Tube tube = tubePrefab != null
                 ? Instantiate(tubePrefab, tubesRoot)
@@ -214,8 +400,6 @@ namespace BallSortGame.Gameplay
             tube.FirstBallY = FirstBallY;
             tube.BallPitch = BallPitch;
             tube.LiftY = LiftY;
-            tube.Setup(index, _capacity, tubeSprite, 3);
-            _tubes.Add(tube);
             return tube;
         }
 
@@ -296,6 +480,7 @@ namespace BallSortGame.Gameplay
             float size = 5f;
             size = Mathf.Max(size, (maxRowWidth / 2f + HorizontalMargin) / aspect);
             size = Mathf.Max(size, rows * RowGap / 2f + 2.6f);
+            size = Mathf.Max(size, MinCameraSize);
             if (cam != null)
             {
                 cam.orthographic = true;
@@ -310,7 +495,9 @@ namespace BallSortGame.Gameplay
             float topBarWorld = 2f * size * TopBarScreenFraction;
             for (int i = 0; i < n; i++)
             {
-                _tubes[i].transform.localPosition = new Vector3(positions[i].x, positions[i].y, 0f);
+                // a short (little) tube stands on the same floor as the big ones
+                float drop = _tubes[i].IsSpare ? (_tubes[i].TubeHeight - TubeHeight) / 2f : 0f;
+                _tubes[i].transform.localPosition = new Vector3(positions[i].x, positions[i].y + drop, 0f);
                 _tubes[i].SnapBalls();
                 int r = rowOf[i];
                 float liftTop = boardY + positions[i].y + LiftY + 0.5f;
@@ -336,9 +523,11 @@ namespace BallSortGame.Gameplay
 
             if (_curTube == null)
             {
+                if (tube.IsHiddenTube) { tube.Shake(); return; }   // covered until a neighbour is completed
                 if (tube.IsEmpty) return;
-                if (tube.IsCompleted)
+                if (tube.IsCompleted || tube.IsInOnly)
                 {
+                    // completed tubes stay; in-only tubes never give a ball back
                     tube.Shake();
                     return;
                 }
@@ -386,7 +575,13 @@ namespace BallSortGame.Gameplay
             _sumStep++;
             MovesChanged?.Invoke(_sumStep, UndosLeft);
 
-            if (to.IsCompleted) to.PlayTubeFull();
+            if (to.IsCompleted)
+            {
+                to.RevealAll();   // nothing left to guess in a finished tube
+                to.PlayTubeFull();
+                TubeCompleted?.Invoke(to);
+                OpenHiddenTubes(animate: true);
+            }
 
             if (GameOver())
             {
@@ -394,6 +589,30 @@ namespace BallSortGame.Gameplay
                 return;
             }
             ScheduleNoMoveCheck();
+        }
+
+        /// <summary>
+        /// Opens every hidden tube next to a completed tube (index - 1 / + 1, mirrors <see cref="BoardState.OpenHiddenTubes"/>);
+        /// an opened tube that is already completed opens its other neighbour too.
+        /// </summary>
+        void OpenHiddenTubes(bool animate)
+        {
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (int i = 0; i < _tubes.Count; i++)
+                {
+                    if (!_tubes[i].IsHiddenTube) continue;
+                    if ((i > 0 && _tubes[i - 1].IsCompleted) || (i + 1 < _tubes.Count && _tubes[i + 1].IsCompleted))
+                    {
+                        _tubes[i].Open(animate);
+                        if (_tubes[i].IsCompleted) _tubes[i].RevealAll();
+                        HiddenTubeOpened?.Invoke(_tubes[i]);
+                        changed = true;
+                    }
+                }
+            }
         }
 
         /// <summary>Every tube completed; empty tubes count as completed.</summary>
@@ -407,8 +626,20 @@ namespace BallSortGame.Gameplay
         {
             _gameOver = true;
             _attemptByLevel.Remove(CurrentLevel);   // a win resets the retry count, so the next visit starts at seed 0 again
+            SaveProgress();
             ClearSelection();
             StartCoroutine(DelayGameOver());
+        }
+
+        /// <summary>Saves the level after the one just won, so the game reopens there. Never moves progress back.</summary>
+        void SaveProgress()
+        {
+            // editor tests (Test Level, the level editor's Test) leave the player's progress alone
+            if (IsTestLevelOn || OverrideLevel != null || IsBotPlaying) return;
+            int next = CurrentLevel + 1;
+            if (next <= SavedLevel) return;
+            PlayerPrefs.SetInt(SavedLevelKey, next);
+            PlayerPrefs.Save();
         }
 
         IEnumerator DelayGameOver()
@@ -453,11 +684,15 @@ namespace BallSortGame.Gameplay
         {
             var board = new BoardState(_tubes.Count, _capacity);
             for (int i = 0; i < _tubes.Count; i++)
+            {
+                board.SetKind(i, _tubes[i].Kind);
                 foreach (var c in _tubes[i].ColorsBottomFirst()) board.Push(i, (byte)c);
+                board.SetHeavy(i, _tubes[i].IsHeavyBottom);
+            }
             return board;
         }
 
-        bool AnyTubeMoving()
+        public bool AnyTubeMoving()
         {
             foreach (var t in _tubes) if (t.IsMoving) return true;
             return false;
@@ -496,11 +731,34 @@ namespace BallSortGame.Gameplay
                 return false;
             }
             if (_tubes.Count >= BoardState.MaxTubes) return false;
+            if (AnyTubeMoving()) return false;   // re-laying out the board would cut the flights short
             ClearSelection();
             _addedTubes++;
             CreateTube(_tubes.Count);
             ComputeTubePos(animate: true);
             AddTubeChanged?.Invoke(AddTubesLeft);
+            return true;
+        }
+
+        /// <summary>
+        /// Little-tube booster (once per level): adds a one-ball tube as a temporary parking spot. It never counts
+        /// as a finished tube, so the level is only won once the little tube is empty again.
+        /// </summary>
+        public bool AddSmallTube()
+        {
+            if (_gameOver) return false;
+            if (SmallTubesLeft <= 0)
+            {
+                Toast?.Invoke("One little tube per level");
+                return false;
+            }
+            if (_tubes.Count >= BoardState.MaxTubes) return false;
+            if (AnyTubeMoving()) return false;
+            ClearSelection();
+            _addedSmallTubes++;
+            CreateSmallTube(_tubes.Count);
+            ComputeTubePos(animate: true);
+            SmallTubeChanged?.Invoke(SmallTubesLeft);
             return true;
         }
 
