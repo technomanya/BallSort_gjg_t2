@@ -1,5 +1,6 @@
 using System.Collections;
 using BallSortGame.Core;
+using BallSortGame.Garden;
 using BallSortGame.Gameplay;
 using BallSortGame.Haptics;
 using BallSortGame.MiniGame;
@@ -24,6 +25,8 @@ namespace BallSortGame.UI
         public Button startButton;
         [Tooltip("Opens the mini game (Mana Flip, or Jump Path when the scene has no Mana Flip).")]
         [FormerlySerializedAs("jumpPathButton")] public Button miniGameButton;
+        [Tooltip("Opens the Mana Garden; ManaGardenView adds one at runtime (top right) when this is empty.")]
+        public Button gardenButton;
         public Text coinsText;
         public Text levelText;
         [Tooltip("Game view parts (HUD bars) switched off while the menu is up; the board (GameManager.tubesRoot) is hidden too.")]
@@ -51,6 +54,7 @@ namespace BallSortGame.UI
             Haptic.Bind(miniGameButton);
             if (startButton != null) startButton.onClick.AddListener(Play);
             if (miniGameButton != null) miniGameButton.onClick.AddListener(OpenMiniGame);
+            if (gardenButton != null) gardenButton.onClick.AddListener(OpenGarden);
             if (!showOnStart) gameObject.SetActive(false);
         }
 
@@ -117,6 +121,14 @@ namespace BallSortGame.UI
             var jumpPath = FindFirstObjectByType<JumpPathView>(FindObjectsInactive.Include);
             if (jumpPath != null) jumpPath.Open();
             else Debug.LogWarning("MainMenuView: no mini game in this scene.");
+        }
+
+        /// <summary>The Mana Garden opens over the menu; closing it comes back to the menu (still paused).</summary>
+        public void OpenGarden()
+        {
+            var garden = FindFirstObjectByType<ManaGardenView>(FindObjectsInactive.Include);
+            if (garden != null) garden.Open();
+            else Debug.LogWarning("MainMenuView: no Mana Garden in this scene.");
         }
 
         // the wallet gets its starting coins in JumpPathView.Start, which may run after ours
