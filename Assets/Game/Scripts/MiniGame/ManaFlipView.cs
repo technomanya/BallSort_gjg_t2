@@ -323,7 +323,7 @@ namespace BallSortGame.MiniGame
             t.font = EditorUI.Font;
             t.text = text;
             t.fontSize = fontSize;
-            t.fontStyle = FontStyle.Bold;
+            t.fontStyle = WordArt.Style(FontStyle.Bold);
             t.alignment = anchor;
             t.color = color;
             t.horizontalOverflow = HorizontalWrapMode.Overflow;

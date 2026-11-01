@@ -65,5 +65,18 @@ namespace BallSortGame.UI
             }
         }
         static Font _builtin;
+
+        /// <summary>
+        /// Font style to use for <paramref name="wanted"/>: the skin font is a display face with no bold cut (Unity
+        /// would fake it and clog the counters), so Bold becomes Normal and BoldAndItalic becomes Italic while it is set.
+        /// </summary>
+        public static FontStyle Style(FontStyle wanted)
+        {
+            var skin = UISkin.Current;
+            if (skin == null || skin.font == null) return wanted;
+            if (wanted == FontStyle.Bold) return FontStyle.Normal;
+            if (wanted == FontStyle.BoldAndItalic) return FontStyle.Italic;
+            return wanted;
+        }
     }
 }

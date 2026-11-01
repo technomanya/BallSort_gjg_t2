@@ -49,7 +49,7 @@ MonoBehaviour:
   iconHaptic: {fileID: 968979224951117750, guid: 2dbef9619c6212e488c3ccd60ff64114, type: 3}
   iconCheck: {fileID: -5991587696965077061, guid: f42060b76e9f4cd43bf88f6f5576c123, type: 3}
   iconArrow: {fileID: -33067239104068978, guid: 109ff149917054b49bf2aa831fcb0886, type: 3}
-  font: {fileID: 0}
+  font: {fileID: 12800000, guid: 470641a6864c13048bfa0d7b4ee5de35, type: 3}
   wordLevel: {fileID: -5000488056336954749, guid: a2b18e520af830d49bfe08c1786ab2fe, type: 3}
   wordContinue: {fileID: -2271835489614291112, guid: fb270011472fc4b409410494d57d03f2, type: 3}
   wordHome: {fileID: -6112995604054834744, guid: 4be845b4bdf46174d809da4c7892848d, type: 3}

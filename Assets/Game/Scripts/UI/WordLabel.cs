@@ -35,6 +35,7 @@ namespace BallSortGame.UI
         /// <summary>Shows the word picture plus <paramref name="number"/> in digit pictures, or <paramref name="text"/> (the number alone when the word picture exists).</summary>
         public void Set(string text, int number)
         {
+            Collect();
             bool hasWord = word != null && word.sprite != null;
             if (word != null) word.gameObject.SetActive(hasWord);
 
@@ -60,6 +61,15 @@ namespace BallSortGame.UI
             if (hasDigits) return;
             fallback.text = hasWord ? s : text;
             fallback.rectTransform.sizeDelta = new Vector2(fallback.preferredWidth + 4f, Mathf.Max(digitHeight, fallback.preferredHeight));
+        }
+
+        /// <summary>Digit pictures already under the row (saved with the scene, or made before a domain reload) are reused, not duplicated.</summary>
+        void Collect()
+        {
+            if (_digits.Count > 0) return;
+            var parent = row != null ? row : (RectTransform)transform;
+            foreach (Transform c in parent)
+                if (c.name.StartsWith("digit_") && c.TryGetComponent(out Image img)) _digits.Add(img);
         }
 
         Image Digit(int i)

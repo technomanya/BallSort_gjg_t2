@@ -271,7 +271,7 @@ namespace BallSortGame.EditorTools
         internal static void ApplyWordArt(GameHUD hud, UISkin skin)
         {
             if (skin.font != null)
-                foreach (var t in hud.GetComponentsInChildren<Text>(true)) { t.font = skin.font; EditorUtility.SetDirty(t); }
+                foreach (var t in hud.GetComponentsInChildren<Text>(true)) { t.font = skin.font; t.fontStyle = WordArt.Style(t.fontStyle); EditorUtility.SetDirty(t); }
             if (hud.levelText != null) LevelLabel(hud.levelText, skin.wordLevel);
             if (hud.mainMenu != null && hud.mainMenu.levelText != null) LevelLabel(hud.mainMenu.levelText, skin.wordLevel);
             WordArt.Picture(hud.successTitle, skin.wordWellDone);
@@ -463,7 +463,7 @@ namespace BallSortGame.EditorTools
             t.font = UIFont;
             t.text = text;
             t.fontSize = fontSize;
-            t.fontStyle = style;
+            t.fontStyle = WordArt.Style(style);
             t.alignment = anchor;
             t.color = color;
             t.horizontalOverflow = HorizontalWrapMode.Overflow;

@@ -101,7 +101,7 @@ namespace BallSortGame.Gameplay
                 tm.font = BallSortGame.UI.WordArt.Font;
                 tm.text = "?";
                 tm.fontSize = 64;
-                tm.fontStyle = FontStyle.Bold;
+                tm.fontStyle = BallSortGame.UI.WordArt.Style(FontStyle.Bold);
                 tm.characterSize = 0.11f;
                 tm.anchor = TextAnchor.MiddleCenter;
                 tm.alignment = TextAlignment.Center;

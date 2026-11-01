@@ -238,7 +238,7 @@ namespace BallSortGame.LevelEditor
             t.font = Font;
             t.text = text;
             t.fontSize = size;
-            t.fontStyle = style;
+            t.fontStyle = WordArt.Style(style);
             t.alignment = anchor;
             t.color = color;
             t.supportRichText = false;
