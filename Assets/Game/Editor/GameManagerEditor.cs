@@ -5,8 +5,7 @@ using UnityEngine;
 namespace BallSortGame.EditorTools
 {
     /// <summary>
-    /// GameManager inspector: the normal fields plus the saved level, a button that jumps to the Test Level
-    /// during play, and a button that clears the saved level.
+    /// Adds the saved level, a play-test-level button and a reset button to the GameManager inspector.
     /// </summary>
     [CustomEditor(typeof(GameManager))]
     public class GameManagerEditor : UnityEditor.Editor

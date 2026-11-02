@@ -12,14 +12,9 @@ using UnityEngine.UI;
 namespace BallSortGame.MiniGame
 {
     /// <summary>
-    /// Coins earned inside a level. Like <see cref="JumpPathView"/> it attaches itself at runtime to any scene with a
-    /// <see cref="GameManager"/> and builds its uGUI in code, so the hand-edited game scene is never touched.
-    ///
-    /// A counter under the HUD's top bar, right side, starts every level at 0. Each tube filled with one colour bursts
-    /// <see cref="CoinsPerTube"/> coins that fly into it. On a win the coins go to the <see cref="Wallet"/>: the counter
-    /// glides to the middle of the win screen, the main balance appears top left, where the main menu shows it, and the
-    /// counter ticks down to zero while the coins fly up to the balance. Restarting a level drops its unbanked coins.
-    /// Both pills are copies of the main menu's coin pill; without a menu they fall back to a plain skinned pill.
+    /// Coins earned inside a level. It is not in the scene: it attaches itself at runtime and builds its own canvas.
+    /// Each completed tube bursts coins into a counter. On a win the counter moves to the win screen and the coins
+    /// fly into the <see cref="Wallet"/> balance. A restart drops unbanked coins.
     /// </summary>
     public class LevelCoinsView : MonoBehaviour
     {
@@ -28,16 +23,16 @@ namespace BallSortGame.MiniGame
         public GameManager game;
 
         [Header("Economy")]
-        [Tooltip("Coin sprites that burst from every tube filled with one colour.")]
+        [Tooltip("Coin sprites that burst from each completed tube.")]
         public int CoinsPerTube = 3;
-        [Tooltip("Coins each burst sprite is worth, so a filled tube pays CoinsPerTube x CoinValue.")]
+        [Tooltip("Coins each burst sprite is worth.")]
         public int CoinValue = 10;
 
         [Header("Layout")]
-        [Tooltip("Counter centre from the top right corner, in canvas units (1080 x 2340); clear of the top bar and the no-moves close button.")]
+        [Tooltip("Counter centre from the top right corner.")]
         public Vector2 CounterPosition = new Vector2(-200f, -370f);
-        [Tooltip("Counter centre on the win screen, from the screen centre, and its scale there.")]
-        public Vector2 WinPosition = new Vector2(0f, -170f);   // between the coin ring and the CONTINUE button of the gold panel
+        [Tooltip("Counter centre on the win screen, and its scale there.")]
+        public Vector2 WinPosition = new Vector2(0f, -170f);   // between the coin ring and the CONTINUE button
         public float WinScale = 1.1f;
         public float CoinSize = 84f;
 
@@ -45,7 +40,7 @@ namespace BallSortGame.MiniGame
         public float PopTime = 0.25f;
         public float FlyTime = 0.55f;
         public float MoveTime = 0.45f;
-        [Tooltip("Coin sprites that fly to the balance at the win; the amount is split between them.")]
+        [Tooltip("Coin sprites that fly to the balance on a win.")]
         public int MaxBankCoins = 12;
         public float BankTime = 1f;
 
@@ -58,10 +53,6 @@ namespace BallSortGame.MiniGame
         readonly List<GameObject> _flying = new List<GameObject>();
         int _levelCoins;
         float _counterScale = 1f, _counterPunch, _totalPunch;
-
-        // =====================================================================
-        // Bootstrap: attach to every gameplay scene
-        // =====================================================================
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Bootstrap()
@@ -93,6 +84,10 @@ namespace BallSortGame.MiniGame
             game.LevelWon += OnLevelWon;
         }
 
+        ManaFlipView _flip;
+        Garden.ManaGardenView _garden;
+        bool _pagesFound;
+
         void OnDestroy()
         {
             if (game == null) return;
@@ -103,9 +98,17 @@ namespace BallSortGame.MiniGame
 
         void Update()
         {
-            // the menu shows its own balance; the settings column sits under the counter
+            // the menu shows its own balance, and the settings page sits under the counter
             bool settings = _hud != null && _hud.settingsPanel != null && _hud.settingsPanel.activeSelf;
-            bool show = !MainMenuView.IsOpen && !settings;
+            // Mana Flip and the garden live on the HUD canvas, which sorts under this one, so hide while one is open
+            if (!_pagesFound || ((_flip == null || _garden == null) && Time.frameCount % 60 == 0))   // look again now and then while one is missing
+            {
+                _pagesFound = true;
+                _flip = FindFirstObjectByType<ManaFlipView>(FindObjectsInactive.Include);
+                _garden = FindFirstObjectByType<Garden.ManaGardenView>(FindObjectsInactive.Include);
+            }
+            bool page = (_flip != null && _flip.IsOpen) || (_garden != null && _garden.IsOpen);
+            bool show = !MainMenuView.IsOpen && !settings && !page;
             if (_canvas.enabled != show) _canvas.enabled = show;
 
             float dt = Time.unscaledDeltaTime * 6f;
@@ -114,10 +117,6 @@ namespace BallSortGame.MiniGame
             _counter.localScale = Vector3.one * (_counterScale * (1f + 0.15f * _counterPunch));
             _total.localScale = Vector3.one * (1f + 0.15f * _totalPunch);
         }
-
-        // =====================================================================
-        // Flow
-        // =====================================================================
 
         void OnLevelStarted(int level, LevelData data) => ResetLevel();
 
@@ -132,7 +131,7 @@ namespace BallSortGame.MiniGame
             _total.gameObject.SetActive(false);
         }
 
-        /// <summary>Counter between its spot under the top bar (0) and the middle of the win screen (1).</summary>
+        // 0 = its spot under the top bar, 1 = the middle of the win screen
         void PlaceCounter(float k)
         {
             _counter.anchorMin = _counter.anchorMax = Vector2.Lerp(Vector2.one, new Vector2(0.5f, 0.5f), k);
@@ -182,7 +181,7 @@ namespace BallSortGame.MiniGame
             int amount = _levelCoins;
             if (amount <= 0) yield break;
             int shown = Wallet.Coins;
-            Wallet.Add(amount);   // saved now; the rest is only the show
+            Wallet.Add(amount);   // saved now, the rest is only the show
             for (float t = 0f; t < 1f;)
             {
                 t = Mathf.Min(1f, t + Time.unscaledDeltaTime / MoveTime);
@@ -211,11 +210,8 @@ namespace BallSortGame.MiniGame
             }
         }
 
-        /// <summary>
-        /// One coin sprite: pops from <paramref name="from"/> out to <paramref name="burst"/> (skipped when
-        /// <paramref name="popTime"/> is 0), then curves into <paramref name="target"/>. <paramref name="bend"/> bows
-        /// the path to the right of the flight direction (negative: to the left). Positions are screen pixels.
-        /// </summary>
+        // one coin pops out to burst (skipped when popTime is 0), then curves into target
+        // bend bows the path right of the flight (negative bows left), positions are screen pixels
         IEnumerator Fly(Vector3 from, Vector3 burst, float popTime, RectTransform target, float bend, float delay, Action onLand)
         {
             var coin = Coin("flying_coin", _root);
@@ -252,7 +248,7 @@ namespace BallSortGame.MiniGame
             onLand?.Invoke();
         }
 
-        /// <summary>Designer test plays and the level bot earn nothing: no tube bursts, nothing banked on the win.</summary>
+        // test plays and the level bot earn nothing
         bool Testing()
         {
             if (game != null && game.IsBotPlaying) return true;
@@ -260,9 +256,7 @@ namespace BallSortGame.MiniGame
             return editor != null && editor.IsTesting;
         }
 
-        // =====================================================================
-        // UI construction
-        // =====================================================================
+        // --- UI construction
 
         void BuildUI()
         {
@@ -270,7 +264,7 @@ namespace BallSortGame.MiniGame
             canvasGo.transform.SetParent(transform, false);
             _canvas = canvasGo.GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            _canvas.sortingOrder = 390;   // over the HUD and its popups, under Jump Path and the level editor
+            _canvas.sortingOrder = 390;   // over the HUD and its popups, under the level editor
             var scaler = canvasGo.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080, 2340);
@@ -283,7 +277,14 @@ namespace BallSortGame.MiniGame
                 scaler.referenceResolution = hudScaler.referenceResolution;
                 scaler.matchWidthOrHeight = hudScaler.matchWidthOrHeight;
             }
-            _root = (RectTransform)canvasGo.transform;
+            // the pills copy the menu's spots, which sit in a safe-area group, so this root needs one too
+            var safe = new GameObject("safe", typeof(RectTransform));
+            _root = (RectTransform)safe.transform;
+            _root.SetParent(canvasGo.transform, false);
+            _root.anchorMin = Vector2.zero;
+            _root.anchorMax = Vector2.one;
+            _root.offsetMin = _root.offsetMax = Vector2.zero;
+            SafeAreaFitter.Attach(_root);
 
             _counter = Pill("level_coins", out _counterText, out _counterCoin);
             _counter.pivot = new Vector2(0.5f, 0.5f);
@@ -292,7 +293,7 @@ namespace BallSortGame.MiniGame
             _total = Pill("total_coins", out _totalText, out _totalCoin);   // keeps the main menu's spot, top left
         }
 
-        /// <summary>Copy of the main menu's coin pill at its menu position, else a plain pill top left.</summary>
+        // a copy of the menu's coin pill at its menu spot, else a plain pill top left
         RectTransform Pill(string name, out Text text, out RectTransform coin)
         {
             var source = MenuCoinPill();
@@ -324,17 +325,15 @@ namespace BallSortGame.MiniGame
             return pill;
         }
 
-        /// <summary>The main menu child holding its coin text, or null.</summary>
         RectTransform MenuCoinPill()
         {
             var menu = _hud != null && _hud.mainMenu != null ? _hud.mainMenu : FindFirstObjectByType<MainMenuView>(FindObjectsInactive.Include);
             if (menu == null || menu.coinsText == null) return null;
-            var t = menu.coinsText.transform;
-            while (t.parent != null && t.parent != menu.transform) t = t.parent;
-            return t.parent == menu.transform ? t as RectTransform : null;
+            // the pill is the text's parent, do not walk further up into the safe-area group
+            return menu.coinsText.transform.parent as RectTransform;
         }
 
-        /// <summary>Coin icon, drawn as a plain gold circle when there is no skin.</summary>
+        // a plain gold circle when there is no skin
         Image Coin(string name, Transform parent)
         {
             var sprite = _skin != null ? _skin.coin : null;

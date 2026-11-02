@@ -4,17 +4,14 @@ using System.Collections.Generic;
 namespace BallSortGame.Core
 {
     /// <summary>
-    /// Random fill of a <see cref="LevelDesign"/>: places the remaining balls of every colour into the luck slots.
-    /// Fixed cells are copied as they are; a tube's heavy balls are carried over to the board.
-    /// Deterministic for a given (design, seed) pair, so a seed number identifies a concrete level like the
-    /// "_difficultyD-K" variants of the Magic Sort pipeline.
+    /// Random fill of a design: fixed cells are copied, the remaining balls go into the luck slots at random.
+    /// The same (design, seed) always gives the same board, so a seed number names a level.
     /// </summary>
     public static class LevelFiller
     {
         /// <summary>
-        /// Fills the design. Returns null (with <paramref name="error"/>) when the design is invalid.
-        /// <paramref name="rejectSolvedTubes"/> re-rolls while any filled tube starts out already complete
-        /// or the board starts in a won state (up to <paramref name="maxRerolls"/> times).
+        /// Null with <paramref name="error"/> when the design is invalid. <paramref name="rejectSolvedTubes"/>
+        /// re-rolls (up to <paramref name="maxRerolls"/> times) while a random tube starts completed or the board starts won.
         /// </summary>
         public static BoardState Fill(LevelDesign design, int seed, out string error, bool rejectSolvedTubes = true, int maxRerolls = 50)
         {
@@ -66,7 +63,7 @@ namespace BallSortGame.Core
             }
         }
 
-        /// <summary>Tubes listed top-first with 0 for empty slots (the level pack convention).</summary>
+        /// <summary>Tubes listed top-first with 0 for empty slots, as in the level pack.</summary>
         public static List<List<int>> ToTopFirst(BoardState board)
         {
             var tubes = new List<List<int>>(board.TubeCount);

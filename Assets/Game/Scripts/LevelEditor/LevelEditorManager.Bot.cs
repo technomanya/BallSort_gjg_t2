@@ -6,10 +6,8 @@ using UnityEngine.UI;
 namespace BallSortGame.LevelEditor
 {
     /// <summary>
-    /// "PLAY AS BOT" asks ALL LEVELS or THIS LEVEL. The <see cref="LevelBot"/> then plays either the loaded pack from
-    /// level 1 or just the level being edited (the same fill TEST would play) on the real board with the HUD showing;
-    /// a bar at the bottom reports progress (speed toggle, STOP), and when it is through (or stopped) a report lists
-    /// every issue; tapping a pack issue loads that fill into the editor so it can be fixed and saved.
+    /// PLAY AS BOT: the <see cref="LevelBot"/> plays the whole pack or just the level being edited on the real board,
+    /// with a progress bar (speed, STOP). A report then lists every issue. Tapping one loads that fill into the editor.
     /// </summary>
     public partial class LevelEditorManager
     {
@@ -29,9 +27,7 @@ namespace BallSortGame.LevelEditor
             _packText.text = n > 0 ? $"PACK {game.levelPackResource}  -  {n} levels" : "No level pack loaded";
         }
 
-        // ------------------------------------------------------------------ run
-
-        /// <summary>PLAY AS BOT: the little popup asking which levels to play.</summary>
+        /// <summary>PLAY AS BOT: the popup asking which levels to play.</summary>
         void AskBot()
         {
             if (_job != null) { Status("Still working on the last job...", EditorUI.Bad); return; }
@@ -56,6 +52,8 @@ namespace BallSortGame.LevelEditor
             StartBot(bot => bot.RunSingle(data, name));
         }
 
+        int _levelBeforeBot;   // the player's level before the first bot run, Close returns to it
+
         void StartBot(System.Action<LevelBot> run)
         {
             if (_job != null) { Status("Still working on the last job...", EditorUI.Bad); return; }
@@ -65,6 +63,7 @@ namespace BallSortGame.LevelEditor
                 _bot.game = game;
                 _bot.Finished += OnBotFinished;
             }
+            if (_levelBeforeBot == 0) _levelBeforeBot = game.CurrentLevel;
             _botting = true;
             _testing = false;
             _panel.SetActive(false);
@@ -120,7 +119,7 @@ namespace BallSortGame.LevelEditor
             ShowReport();
         }
 
-        /// <summary>Leaves bot mode; <paramref name="backToEditor"/> reopens the editor panel, otherwise the caller decides.</summary>
+        /// <summary>Leaves bot mode. <paramref name="backToEditor"/> reopens the editor panel.</summary>
         void StopBot(bool backToEditor)
         {
             if (_bot != null && _bot.IsRunning) _bot.Stop();
@@ -136,8 +135,6 @@ namespace BallSortGame.LevelEditor
                 Refresh();
             }
         }
-
-        // ------------------------------------------------------------------ report
 
         void ShowReport()
         {
@@ -193,9 +190,7 @@ namespace BallSortGame.LevelEditor
             _reportSummary.color = Color.white;
         }
 
-        // ------------------------------------------------------------------ UI
-
-        /// <summary>Row above the actions: pack label and the PLAY AS BOT button.</summary>
+        /// <summary>Row above the actions: pack label, PLAY AS BOT and SHARE.</summary>
         void BuildPackRow(Transform panel)
         {
             var row = EditorUI.Row("pack", panel, false, 426f, 100f, 16f);
@@ -208,7 +203,7 @@ namespace BallSortGame.LevelEditor
 
         void BuildBotUI(RectTransform root)
         {
-            // ---- "which levels?" popup: dim blocker (tap outside closes), card with two choices
+            // "which levels?" popup: dim blocker (tap outside closes) and a card with two choices
             var blocker = EditorUI.Panel("bot_choice", root, new Color(0f, 0f, 0f, 0.6f));
             blocker.sprite = null;
             blocker.raycastTarget = true;
@@ -232,7 +227,7 @@ namespace BallSortGame.LevelEditor
             _botChoice = blocker.gameObject;
             _botChoice.SetActive(false);
 
-            // ---- bot bar while playing: status pill, speed, STOP (above the booster bar, like the "< EDITOR" pill)
+            // bot bar while playing: status pill, speed, STOP (above the booster bar)
             var bar = EditorUI.Row("bot_bar", root, false, 320f, 110f, 16f);
             var pill = EditorUI.Image("bot_status", bar, EditorUI.PillSprite, EditorUI.Tint(EditorUI.Skin?.pill, EditorUI.Bar), true);
             EditorUI.Flex(pill, 1f);
@@ -243,7 +238,7 @@ namespace BallSortGame.LevelEditor
             _botBar = bar.gameObject;
             _botBar.SetActive(false);
 
-            // ---- report: dark page over the board with the issue list
+            // report: dark page over the board with the issue list
             var page = EditorUI.Panel("bot_report", root, EditorUI.Background);
             page.raycastTarget = true;
             var top = EditorUI.Row("top_bar", page.transform, true, 68f, 146f, 24f);

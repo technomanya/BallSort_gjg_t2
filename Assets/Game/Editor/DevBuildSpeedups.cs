@@ -8,11 +8,8 @@ using UnityEngine;
 namespace BallSortGame.EditorTools
 {
     /// <summary>
-    /// Makes development builds compile faster. While a Development Build runs, Burst AOT compilation is switched off
-    /// (the game has no Burst jobs of its own; Burst only spends 15-20 minutes per CPU architecture on package code)
-    /// and IL2CPP code generation is set to "Faster (smaller) builds" (full generic sharing: far less C++ to compile,
-    /// a slower player, which does not matter for testing). Both settings are put back right after the build, whether
-    /// it succeeded or failed, so release builds are untouched. Nothing happens for a non-development build.
+    /// For development builds only: turns Burst AOT off (the game has no Burst jobs, it only slows the build) and sets
+    /// IL2CPP to faster builds. Both are restored after the build, pass or fail.
     /// </summary>
     class DevBuildSpeedups : IPreprocessBuildWithReport, IPostprocessBuildWithReport
     {
@@ -21,7 +18,7 @@ namespace BallSortGame.EditorTools
         const string KeyCodeGen = "BallSort.DevBuildSpeedups.codegen";
         const string KeyBurst = "BallSort.DevBuildSpeedups.burst";
 
-        /// <summary>Runs before Burst's own build preprocessor (order 0), which reads the AOT settings file.</summary>
+        // before Burst's own preprocessor (order 0), which reads the AOT settings file
         public int callbackOrder => -1000;
 
         public void OnPreprocessBuild(BuildReport report)
@@ -39,14 +36,14 @@ namespace BallSortGame.EditorTools
             EditorPrefs.SetInt(KeyTarget, (int)target);
             EditorPrefs.SetInt(KeyCodeGen, (int)codeGen);
             EditorPrefs.SetInt(KeyBurst, burst.HasValue ? (burst.Value ? 1 : 0) : -1);
-            // the build runs synchronously: this fires once BuildPlayer has returned, also when the build failed
+            // fires once BuildPlayer returns, also after a failed build
             EditorApplication.delayCall += Restore;
             Debug.Log($"Development build: Burst AOT {(burst == true ? "switched off" : "already off")}, IL2CPP code generation set to faster builds (was {codeGen}). Both are restored after the build.");
         }
 
         public void OnPostprocessBuild(BuildReport report) => Restore();
 
-        /// <summary>A crashed or aborted build never reaches the postprocessor: put the settings back on the next load.</summary>
+        // a crashed build never reaches the postprocessor, so restore on the next load
         [InitializeOnLoadMethod]
         static void RestoreLeftover()
         {
@@ -67,11 +64,8 @@ namespace BallSortGame.EditorTools
             Debug.Log($"Development build done: IL2CPP code generation back to {codeGen}{(burst == 1 ? ", Burst AOT back on" : "")}.");
         }
 
-        /// <summary>
-        /// Sets Burst's per-platform "Enable Burst Compilation" (Project Settings > Burst AOT Settings), which Burst
-        /// keeps in ProjectSettings/BurstAotSettings_&lt;Target&gt;.json and reads at build time. The class is internal,
-        /// so this goes through reflection. Returns the previous value, or null when Burst is not installed.
-        /// </summary>
+        // Sets Burst's per-platform "Enable Burst Compilation" through reflection (the settings class is internal).
+        // Returns the previous value, or null when Burst is not installed.
         static bool? SetBurstAot(BuildTarget target, bool enabled)
         {
             try

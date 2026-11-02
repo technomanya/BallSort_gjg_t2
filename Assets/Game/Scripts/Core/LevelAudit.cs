@@ -1,24 +1,23 @@
-using System;
 using System.Collections.Generic;
 
 namespace BallSortGame.Core
 {
     public enum IssueSeverity { Error, Warning }
 
-    /// <summary>One problem found in a level pack: which level slot and fill, and what is wrong.</summary>
+    /// <summary>One problem in a level pack: which level and fill, and what is wrong.</summary>
     public sealed class LevelIssue
     {
         /// <summary>1-based level number in the pack.</summary>
         public int Level;
-        /// <summary>0 = the main fill, 1.. = variants, 1000+ = dlb fills (the indices of <see cref="LevelData.ForAttempt"/>).</summary>
+        /// <summary>0 = main fill, 1.. = variants, 1000+ = dlb fills.</summary>
         public int SeedIndex;
         public string PuzzleId;
         public IssueSeverity Severity;
         public string Message;
-        /// <summary>The fill the issue is about (null for pack-wide issues).</summary>
+        /// <summary>The fill the issue is about, null for pack-wide issues.</summary>
         public LevelData Data;
 
-        /// <summary>Overrides the "Level N" place name, e.g. the name of the editor level the bot played alone.</summary>
+        /// <summary>Replaces "Level N" in the text, e.g. with an editor level's name.</summary>
         public string Label;
 
         public string SeedLabel => SeedIndex <= 0 ? "" : SeedIndex >= 1000 ? $" dlb {SeedIndex - 999}" : $" seed {SeedIndex + 1}";
@@ -28,30 +27,28 @@ namespace BallSortGame.Core
             $"[{(Severity == IssueSeverity.Error ? "ERROR" : "warn")}] {Where}{(string.IsNullOrEmpty(PuzzleId) ? "" : $" ({PuzzleId})")}: {Message}";
     }
 
-    /// <summary>Everything the audit learned about one fill.</summary>
+    /// <summary>What the audit found for one fill.</summary>
     public sealed class AuditResult
     {
         public readonly List<LevelIssue> Issues = new List<LevelIssue>();
-        /// <summary>Solver result; null when the structure was too broken to build a board.</summary>
+        /// <summary>Null when the fill was too broken to build a board.</summary>
         public LevelRating Rating;
-        /// <summary>Well-formed and proven solvable: the bot can play it.</summary>
+        /// <summary>Well-formed and proven solvable, so the bot can play it.</summary>
         public bool Playable => Rating != null && Rating.Verdict == SolveVerdict.Solvable && Rating.Solution != null;
     }
 
     /// <summary>
-    /// Pack sanity checks for the level bot and the editor tools: malformed fills (ball counts, gaps, sizes, one-way
-    /// tube rules, heavy marks on missing balls), unsolvable fills (with a note when only the Add Tube booster saves them), fills the solver cannot
-    /// decide, stored "steps" hints that do not solve the level, and duplicate puzzle ids. No Unity types: safe to
-    /// run on a worker thread.
+    /// Pack sanity checks: malformed fills, unsolvable or undecided fills, stored steps that do not solve the
+    /// level, and duplicate puzzle ids. No Unity types, so it can run on a worker thread.
     /// </summary>
     public static class LevelAudit
     {
-        /// <summary>Budget for the fill the bot plays: a short solution is wanted, so A* runs.</summary>
+        /// <summary>For the fill the bot plays: A* runs to get a short solution.</summary>
         public static RaterBudget PlayBudget => new RaterBudget { AStarMaxNodes = 150_000, AStarMaxMilliseconds = 700, GreedyMaxStates = 200_000, GreedyMaxMilliseconds = 600, Playouts = 100 };
-        /// <summary>Budget for the other fills of a slot: solvability only.</summary>
+        /// <summary>For the other fills of a slot: solvability only.</summary>
         public static RaterBudget CheckBudget => new RaterBudget { AStarMaxNodes = 0, AStarMaxMilliseconds = 0, GreedyMaxStates = 200_000, GreedyMaxMilliseconds = 600, Playouts = 0 };
 
-        /// <summary>Structural problem of a fill, or null when it is well-formed (every colour has exactly capacity balls, no gaps, legal sizes and tube kinds, not solved yet, some free space).</summary>
+        /// <summary>Structural problem of a fill, or null when it is well-formed.</summary>
         public static string Structure(LevelData lv)
         {
             if (lv == null || lv.Tubes == null || lv.Tubes.Count == 0) return "no tubes";
@@ -114,7 +111,7 @@ namespace BallSortGame.Core
             return n;
         }
 
-        /// <summary>Replays the stored "steps" hint. Null when there are none or they solve the level, else the problem.</summary>
+        /// <summary>Replays the stored "steps". Null when there are none or they solve the level, else the problem.</summary>
         public static string CheckSteps(LevelData lv)
         {
             if (lv.Steps == null || lv.Steps.Count == 0) return null;
@@ -131,7 +128,7 @@ namespace BallSortGame.Core
             return b.IsWin() ? null : $"the {lv.Steps.Count} stored steps do not finish the level";
         }
 
-        /// <summary>Full check of one fill: structure, solvability (with the Add Tube note), stored steps.</summary>
+        /// <summary>Structure, solvability (noting when only Add Tube saves it) and stored steps of one fill.</summary>
         public static AuditResult Audit(LevelData lv, int level, int seedIndex, RaterBudget budget)
         {
             var r = new AuditResult();
@@ -158,7 +155,7 @@ namespace BallSortGame.Core
             return r;
         }
 
-        /// <summary>Checks every fill of a level slot except the main one (variants and dlb fills).</summary>
+        /// <summary>Checks the variants and dlb fills of a level slot.</summary>
         public static List<LevelIssue> AuditOtherSeeds(LevelData slot, int level, RaterBudget budget)
         {
             var issues = new List<LevelIssue>();

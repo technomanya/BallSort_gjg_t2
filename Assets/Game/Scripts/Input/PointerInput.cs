@@ -5,28 +5,23 @@ using UnityEngine.SceneManagement;
 namespace BallSortGame
 {
     /// <summary>
-    /// The one place the game reads the pointer (a finger or the mouse). Release builds read it as Unity gives it.
-    /// The Unity Editor and development builds (the builds that run on a PC emulator such as BlueStacks, where the
-    /// emulator turns the mouse into a touch) go through <see cref="DevPointerInput"/>: it shows a marker where Unity
-    /// received each tap, logs the screen numbers of the tap, and corrects the coordinates when the touch space turns
-    /// out to be a different size than the surface Unity renders to (see <see cref="DevPointerInput.Correct"/>).
+    /// The one place the game reads the pointer (finger or mouse). The editor and dev builds go through
+    /// DevPointerInput, which marks and logs each tap and fixes coordinates on emulators like BlueStacks.
     /// </summary>
     public static class PointerInput
     {
-        /// <summary>Unity Editor or a development build: the dev input path is used.</summary>
+        /// <summary>Editor or development build.</summary>
         public static bool IsDev => Application.isEditor || Debug.isDebugBuild;
 
-        /// <summary>True on the frame the finger touches down / the mouse button is pressed.</summary>
+        /// <summary>True on the frame the finger touches down or the mouse is pressed.</summary>
         public static bool Down => Input.GetMouseButtonDown(0);
 
-        /// <summary>Pointer position in screen pixels (origin bottom left), corrected on the dev path.</summary>
+        /// <summary>Screen pixels, origin bottom left.</summary>
         public static Vector2 Position => IsDev ? DevPointerInput.Correct(Input.mousePosition) : (Vector2)Input.mousePosition;
 
         /// <summary>
-        /// True when the tap that is being handled landed on UI. With a touch the EventSystem is asked about that finger:
-        /// the parameterless <see cref="EventSystem.IsPointerOverGameObject()"/> is the mouse pointer, which on Android
-        /// (and so in emulators) is only refreshed on frames without a touch, so it still reports the UI button of the
-        /// previous tap when the next tap starts on the board.
+        /// True when the current tap landed on UI. With a touch we ask about that finger, because on Android the
+        /// mouse pointer only refreshes on frames without a touch and still reports the previous tap's button.
         /// </summary>
         public static bool IsOverUi()
         {
@@ -43,15 +38,11 @@ namespace BallSortGame
     }
 
     /// <summary>
-    /// Dev-build pointer path (never attached in a release build). It hooks itself into the scene's
-    /// <see cref="StandaloneInputModule"/> as its <see cref="BaseInputModule.inputOverride"/>, so the uGUI buttons and the
-    /// board taps see the same corrected position. For every tap it draws a cross where Unity received the tap for half
-    /// a second (if the cross is not under the mouse, the coordinates are wrong before they reach the game) and, in a
-    /// build, shows and logs <c>Pointer: raw -> used | Screen | system | rendering | safe | orientation | ui</c>.
-    ///
-    /// Correction: when the Android display (<see cref="Display.systemWidth"/>) is not the size Unity renders at
-    /// (<see cref="Screen.width"/>) and a raw position ever lands outside the screen, the touch is evidently reported in
-    /// display pixels; from then on positions are scaled into screen pixels. Nothing is changed before that evidence.
+    /// Dev-build pointer path, never attached in release. Hooks in as the StandaloneInputModule's inputOverride so
+    /// uGUI and board taps see the same corrected position. Draws a cross where each tap landed and, in a build,
+    /// logs the screen numbers.
+    /// If the display size differs from Screen and a raw tap ever lands off screen, touches are in display pixels,
+    /// so from then on positions are scaled into screen pixels.
     /// </summary>
     public class DevPointerInput : BaseInput
     {
@@ -73,7 +64,6 @@ namespace BallSortGame
 
         static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => Hook();
 
-        /// <summary>Attaches the dev input to the current StandaloneInputModule (once per module).</summary>
         public static void Hook()
         {
             if (!PointerInput.IsDev) return;
@@ -84,7 +74,7 @@ namespace BallSortGame
             module.inputOverride = _instance;
         }
 
-        /// <summary>Maps a raw pointer position into screen pixels on the dev path (see the class summary).</summary>
+        /// <summary>Maps a raw pointer position into screen pixels.</summary>
         public static Vector2 Correct(Vector2 raw)
         {
             if (_instance == null) Hook();
@@ -114,7 +104,7 @@ namespace BallSortGame
             return used;
         }
 
-        // ---- BaseInput: what the StandaloneInputModule reads; only the positions change
+        // BaseInput overrides: only the positions change.
         public override Vector2 mousePosition => Correct(Input.mousePosition);
 
         public override Touch GetTouch(int index)

@@ -6,9 +6,8 @@ using UnityEngine.UI;
 namespace BallSortGame.UI
 {
     /// <summary>
-    /// Settings page (mockup: back arrow, then haptic / music / sound, each a square button over a striped level bar).
-    /// The bar is a Slider; the button mutes and restores it. Values live in PlayerPrefs and the sound level drives
-    /// <see cref="AudioListener.volume"/>; music and haptics are read through the static properties by whoever plays them.
+    /// Settings page with haptic, music and sound rows. Each row's button mutes and restores its slider.
+    /// Values live in PlayerPrefs.
     /// </summary>
     public class SettingsView : MonoBehaviour
     {
@@ -17,7 +16,6 @@ namespace BallSortGame.UI
         public const string SoundKey = "ballsort.sound";
 
         public static bool Haptic => PlayerPrefs.GetFloat(HapticKey, 1f) > 0f;
-        public static float MusicVolume => PlayerPrefs.GetFloat(MusicKey, 1f);
         public static float SoundVolume => PlayerPrefs.GetFloat(SoundKey, 1f);
 
         [Serializable]
@@ -35,7 +33,7 @@ namespace BallSortGame.UI
         [Tooltip("Icon tint while the row is muted.")]
         public Color iconOff = new Color(1f, 1f, 1f, 0.45f);
 
-        /// <summary>Applies the saved sound level; runs once at start-up so the first sound respects it.</summary>
+        // runs at start-up so the first sound already uses the saved level
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void ApplySaved() => AudioListener.volume = SoundVolume;
 
@@ -79,14 +77,26 @@ namespace BallSortGame.UI
             else Set(row, key, next);
         }
 
+        bool _dirty;
+
+        void SaveIfDirty()
+        {
+            if (!_dirty) return;
+            _dirty = false;
+            PlayerPrefs.Save();
+        }
+
+        void OnDisable() => SaveIfDirty();
+        void OnApplicationPause(bool paused) { if (paused) SaveIfDirty(); }
+
         void Set(Row row, string key, float v)
         {
             if (v > 0f) row.LastOn = v;
             PlayerPrefs.SetFloat(key, v);
-            PlayerPrefs.Save();
+            _dirty = true;   // saved once on close, a slider drag would write the prefs file every tick
             Paint(row, v);
             if (key == SoundKey) AudioListener.volume = v;
-            if (key == HapticKey && v > 0f) BallSortGame.Haptics.Haptic.Play(HapticType.ButtonClick);   // the switch itself is felt (reference VibrationToggle)
+            if (key == HapticKey && v > 0f) BallSortGame.Haptics.Haptic.Play(HapticType.ButtonClick);   // turning haptics on is felt
         }
 
         void Paint(Row row, float v)

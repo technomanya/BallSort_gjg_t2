@@ -15,45 +15,28 @@ using UnityEngine.UI;
 namespace BallSortGame.LevelEditor
 {
     /// <summary>
-    /// In-app level editor (the ball-sort counterpart of Magic Sort's Modules.LevelEditor.WaterSort). It ships inside
-    /// the normal game build: it attaches itself to any scene with a <see cref="GameManager"/> when <see cref="IsAllowed"/>
-    /// (Unity Editor or a development build), and designers open it with F2 or a tap on the level pill. A release build
-    /// never attaches it, so players never see it.
-    ///
-    /// The layout is shown on the real board (<see cref="GameManager.Preview"/>: the game's tubes, balls and background,
-    /// grey "?" balls for luck slots) with the editor controls over it in the game's UI skin, the way the main menu
-    /// sits over the board. Tap a ball to recolour it with the palette colour, tap the empty glass to fill the rest of
-    /// the tube; TUBES / HEIGHT / COLOURS steppers size the level (a new tube comes as a full "?" tube of a new colour;
-    /// erase it for a spare tube). Check fills the "?" cells with the colours of one solvable fill, so the designer sees
-    /// the whole level; the "?" tool then hides a coloured ball in the game (tap again to show it): it keeps its colour,
-    /// drawn with a "?" on it. The IN and OUT palette tools make a tube one-way
-    /// (tap again to make it normal): in-only tubes start empty, out-only tubes start filled. The HIDE tool covers a tube
-    /// until a neighbouring tube is completed (tap again to uncover it). The HEAVY tool puts the
-    /// cannonball weight on any ball (tap again to take it off): it keeps its colour, but the player can only move it
-    /// alone into an empty tube, where it sinks to the bottom. Test plays it, Check
-    /// fills the "?" cells and rates the result, Save generates rated seeds of the wanted difficulty and writes them into the pack the game plays,
-    /// replacing the slot the layout came from (or appending a new level). The LEVEL row's number box + GO jumps to a
-    /// pack slot by its unique level number (the number it shows before the pack loops); a number past the end starts
-    /// a new level that is appended on save.
+    /// In-app level editor. It attaches itself to any scene with a <see cref="GameManager"/> in the Unity Editor or a
+    /// development build (never in release) and opens with F2 or a tap on the level pill. The layout is drawn on the
+    /// real board with the controls over it. Save generates rated seeds and writes them into the pack the game plays.
     /// </summary>
     public partial class LevelEditorManager : MonoBehaviour
     {
         const int Eraser = 0;
         const int InOnlyTool = -2;      // palette tools that set the tube kind instead of painting
         const int OutOnlyTool = -3;
-        const int HeavyTool = -4;       // toggles the weight on the tapped ball
-        const int HiddenTool = -5;      // covers a tube until a neighbouring tube is completed
+        const int HeavyTool = -4;
+        const int HiddenTool = -5;      // covers a tube until a same-row neighbour is completed
         const int MaxPaletteColors = 14;
         const int UndoDepth = 100;
-        const int SeedsPerLevel = 5;          // Magic Sort generates five fills per level
+        const int SeedsPerLevel = 5;
         const float FreeScreenFraction = 0.235f;  // screen height kept clear of tubes at the top and the bottom for the controls
 
-        /// <summary>Unity Editor or a development build (Build Profiles > Development Build). Never a release build.</summary>
+        /// <summary>Unity Editor or a development build, never a release build.</summary>
         public static bool IsAllowed => Application.isEditor || Debug.isDebugBuild;
         public static string SaveDir => Path.Combine(Application.persistentDataPath, "LevelEditor");
         /// <summary>
-        /// The pack the game plays (<see cref="GameManager.levelPackResource"/>): in the Unity Editor its JSON under
-        /// Resources, so the saved levels are what the game loads next time; on a device a copy under persistentDataPath.
+        /// The pack the game plays. In the Unity Editor its JSON under Resources, on a device the persistentDataPath
+        /// copy that a development build loads instead of the bundled pack.
         /// </summary>
         public string PackPath
         {
@@ -62,12 +45,11 @@ namespace BallSortGame.LevelEditor
                 string res = string.IsNullOrEmpty(game?.levelPackResource) ? "data/editor_pack" : game.levelPackResource;
                 return Application.isEditor
                     ? Path.Combine(Application.dataPath, "Game/Resources", res + ".json")
-                    : Path.Combine(SaveDir, Path.GetFileName(res) + ".json");
+                    : LevelLoader.SavedPackPath(res);
             }
         }
 
         public GameManager game;
-        public bool IsOpen => _open;
         public bool IsTesting => _testing;
 
         EditorLevel _level;
@@ -77,7 +59,7 @@ namespace BallSortGame.LevelEditor
         readonly List<string> _undo = new List<string>();
         readonly List<string> _redo = new List<string>();
 
-        // background job (solver / generator run off the main thread)
+        // background job (solver / generator off the main thread)
         Task _job;
         Action _jobDone;
         bool _generating;
@@ -103,9 +85,7 @@ namespace BallSortGame.LevelEditor
             public Text Usage;
         }
 
-        // =====================================================================
-        // Bootstrap: attach to every gameplay scene when allowed
-        // =====================================================================
+        // --- bootstrap: attach to every gameplay scene when allowed
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Bootstrap()
@@ -172,10 +152,6 @@ namespace BallSortGame.LevelEditor
             Open();
         }
 
-        // =====================================================================
-        // Open / close / test
-        // =====================================================================
-
         public void Open()
         {
             if (game == null) return;
@@ -199,10 +175,14 @@ namespace BallSortGame.LevelEditor
             _testBar.SetActive(false);
             if (_botChoice != null) _botChoice.SetActive(false);
             game.MinCameraSize = 0f;
-            bool moved = _level != null && InPack(_level.Slot) && SlotOf(game.CurrentLevel) != _level.Slot;
+            int back = _levelBeforeBot;   // a bot run leaves the game on its last level, so go back to the player's
+            _levelBeforeBot = 0;
+            int current = back > 0 ? back : game.CurrentLevel;
+            bool moved = _level != null && InPack(_level.Slot) && SlotOf(current) != _level.Slot;
             bool overridden = game.OverrideLevel != null;
             if (overridden) game.SetOverrideLevel(null);   // back to the pack level that was being played
             if (moved) game.StartLevel(_level.Slot);       // GO went to another level: the game follows
+            else if (back > 0) game.StartLevel(back);
             else if (!overridden) game.Restart();          // the preview replaced the board
             ShowHud(true);
             game.IsPaused = MainMenuView.IsOpen;
@@ -212,6 +192,9 @@ namespace BallSortGame.LevelEditor
         {
             var cur = game.CurrentLevelData;
             int slot = game.OverrideLevel == null ? SlotOf(game.CurrentLevel) : 0;
+            // after a retry the game may play a variant or dlb fill, but save replaces the main fill, so edit that
+            if (slot > 0 && game.Stage != null && slot <= game.Stage.Levels.Count && game.Stage.Levels[slot - 1] != null)
+                cur = game.Stage.Levels[slot - 1];
             if (cur != null && cur.Tubes.Count > 0)
             {
                 var lv = EditorLevel.FromLevelData(cur, slot > 0 ? $"lv{slot}" : NewName());
@@ -221,22 +204,17 @@ namespace BallSortGame.LevelEditor
             return EditorLevel.Standard(NewName(), 4, 2, 4);
         }
 
-        // =====================================================================
-        // Pack slots: the unique level number of a pack entry is its 1-based index (what it shows before the pack loops)
-        // =====================================================================
-
         int PackCount => game.Stage?.Levels.Count ?? 0;
 
         bool InPack(int slot) => slot >= 1 && slot <= PackCount;
 
-        /// <summary>The pack slot a level number plays (level 106 of a 100-level pack is slot 6); 0 without a pack.</summary>
+        /// <summary>The pack slot a level number plays (level 106 of a 100-level pack is slot 6). 0 without a pack.</summary>
         int SlotOf(int level)
         {
             int n = PackCount;
             return n == 0 ? 0 : ((level - 1) % n + n) % n + 1;
         }
 
-        /// <summary>GO: the number typed in the LEVEL row.</summary>
         void Go()
         {
             string s = _goField != null ? _goField.text.Trim() : "";
@@ -246,8 +224,8 @@ namespace BallSortGame.LevelEditor
         }
 
         /// <summary>
-        /// Loads pack slot <paramref name="n"/> into the editor (Save then replaces it). A number past the end of the pack
-        /// starts a new level with the current sizes, appended as the next slot on save.
+        /// Loads pack slot n into the editor. A number past the end starts a new level with the current sizes,
+        /// appended on save.
         /// </summary>
         bool GoToLevel(int n)
         {
@@ -284,7 +262,7 @@ namespace BallSortGame.LevelEditor
                 : "NO PACK LOADED";
         }
 
-        /// <summary>Hides the game HUD while editing; its state (menu, popups) is kept.</summary>
+        /// <summary>Hides the game HUD while editing. Its state (menu, popups) is kept.</summary>
         void ShowHud(bool on)
         {
             if (_hudCanvas == null)
@@ -299,8 +277,8 @@ namespace BallSortGame.LevelEditor
         }
 
         /// <summary>
-        /// What TEST and the bot's "this level" play: the generated seeds when there are any, otherwise one random
-        /// fill of the layout. Null (with the reason in the status line) when the layout is not valid or cannot be filled.
+        /// What TEST and the bot's THIS LEVEL play: the generated seeds, else one random fill. Null (reason in the
+        /// status line) when the layout is invalid.
         /// </summary>
         LevelData TestData()
         {
@@ -313,7 +291,6 @@ namespace BallSortGame.LevelEditor
             return new LevelData { PuzzleId = $"{_level.Name}_seed{seed}", Tubes = LevelFiller.ToTopFirst(board), TubeKinds = board.KindsOrNull(), Heavy = board.HeavyOrNull(), Hidden = _level.HiddenTopFirst() };
         }
 
-        /// <summary>Plays the generated seeds when there are any, otherwise one random fill of the layout.</summary>
         void Test()
         {
             var data = TestData();
@@ -324,7 +301,7 @@ namespace BallSortGame.LevelEditor
             game.MinCameraSize = 0f;
             ShowHud(true);
             game.SetOverrideLevel(data);
-            // the editor may have been opened from the main menu; the test is played, not menued
+            // opened from the main menu: leave it so the test is played
             var menu = FindFirstObjectByType<MainMenuView>();
             if (menu != null && MainMenuView.IsOpen) menu.Play();
         }
@@ -338,14 +315,12 @@ namespace BallSortGame.LevelEditor
             Refresh();
         }
 
-        // =====================================================================
-        // Editing with undo
-        // =====================================================================
+        // --- editing with undo
 
-        /// <summary>Undo state: the layout with its seeds, so undoing an edit brings the generated seeds back.</summary>
+        /// <summary>Undo state: the layout with its seeds, so undoing an edit brings the seeds back.</summary>
         string Snapshot() => JsonConvert.SerializeObject(_level);
 
-        /// <summary>The layout alone, to tell whether seeds still belong to it.</summary>
+        /// <summary>The layout without seeds, to tell whether seeds still belong to it.</summary>
         string LayoutKey()
         {
             var seeds = _level.Seeds;
@@ -355,7 +330,7 @@ namespace BallSortGame.LevelEditor
             return json;
         }
 
-        /// <summary>Runs an edit; when it changed something the old state goes on the undo stack and the seeds are dropped.</summary>
+        /// <summary>Runs an edit. When it changed something, the old state goes on the undo stack and the seeds are dropped.</summary>
         void Edit(Func<bool> op)
         {
             var before = Snapshot();
@@ -388,9 +363,8 @@ namespace BallSortGame.LevelEditor
         int PaletteSize => Mathf.Clamp(game.ballSprites != null && game.ballSprites.Length > 0 ? game.ballSprites.Length : 12, 1, MaxPaletteColors);
 
         /// <summary>
-        /// Tubes: a new tube is a full "?" tube of a new colour, so Save fills it and Reset keeps it (empty it with the
-        /// eraser and lower COLOURS for a spare tube; once the palette is used up new tubes start empty). Removing a
-        /// tube that had balls drops a colour again (never below the highest colour still placed).
+        /// A new tube is a full "?" tube of a new colour, or empty once the palette is used up. Removing a tube that
+        /// had balls drops a colour again.
         /// </summary>
         bool SetTubeCount(int count)
         {
@@ -415,7 +389,7 @@ namespace BallSortGame.LevelEditor
             return true;
         }
 
-        /// <summary>Reset: every colour a full "?" tube plus the current number of spare tubes (at least two).</summary>
+        /// <summary>One full "?" tube per colour plus the current spare tubes (at least two).</summary>
         void Reset()
         {
             int colors = Mathf.Min(_level.ColorCount, PaletteSize);
@@ -424,10 +398,6 @@ namespace BallSortGame.LevelEditor
             lv.Slot = _level.Slot;
             Replace(lv);
         }
-
-        // =====================================================================
-        // Taps on the board (the real tubes, hit through their colliders)
-        // =====================================================================
 
         void TapBoard()
         {
@@ -453,7 +423,7 @@ namespace BallSortGame.LevelEditor
             }
             if (_selected == HeavyTool)
             {
-                // heavy tool: the weight goes on (or off) the tapped ball, whatever its colour or place in the tube
+                // heavy tool: the weight goes on or off the tapped ball
                 if (count == 0) { Status("Heavy: tap a ball to put the weight on it (tap again to take it off).", EditorUI.Bad); return; }
                 int ball = Mathf.Min(slot, count - 1);   // the glass above the stack means the top ball
                 Edit(() => _level.SetHeavy(index, ball, !_level.IsHeavy(index, ball)));
@@ -466,7 +436,7 @@ namespace BallSortGame.LevelEditor
             }
             if (slot < count && _selected == EditorLevel.Random && _level.Tubes[index][slot] > 0)
             {
-                // "?" on a coloured ball: the game hides it (tap again to show it); the colour stays
+                // "?" on a coloured ball toggles hiding it in the game. The colour stays.
                 Edit(() => _level.SetBallHidden(index, slot, !_level.IsBallHidden(index, slot)));
             }
             else if (slot < count)
@@ -476,7 +446,7 @@ namespace BallSortGame.LevelEditor
             }
             else
             {
-                // empty glass: fill the free slots with the value; the eraser empties the tube
+                // empty glass: fill the free slots, or empty the tube with the eraser
                 Edit(() =>
                 {
                     if (_selected == Eraser) return _level.FillTube(index, Eraser);
@@ -493,13 +463,11 @@ namespace BallSortGame.LevelEditor
             RefreshPalette();
         }
 
-        // =====================================================================
-        // Check / Save (generator = the local stand-in for Magic Sort's SolveLevelRequest backend)
-        // =====================================================================
+        // --- check / save
 
         /// <summary>
-        /// Fills the "?" cells with the colours of one random fill, so the designer sees the whole level (hide chosen
-        /// balls again with the "?" tool), then rates it: solvable, optimal-ish move count, and the bot difficulty bucket.
+        /// Fills the "?" cells with one random fill so the designer sees the whole level, then rates it
+        /// (solvable, move count, difficulty bucket).
         /// </summary>
         void Check()
         {
@@ -521,7 +489,7 @@ namespace BallSortGame.LevelEditor
             });
         }
 
-        /// <summary>Generates the seeds when the layout changed since the last ones, then writes them into the pack.</summary>
+        /// <summary>Generates seeds if the layout changed since the last ones, then writes them into the pack.</summary>
         void Save()
         {
             if (_level.Seeds != null) { WritePack(); return; }
@@ -543,7 +511,7 @@ namespace BallSortGame.LevelEditor
                     var options = new GeneratorOptions
                     {
                         WantedBuckets = Enumerable.Repeat(bucket, SeedsPerLevel).ToList(),
-                        FallbackTolerance = 6,   // any solvable fill is better than none; the bucket is stored per seed
+                        FallbackTolerance = 6,   // any solvable fill beats none, and each seed stores its own bucket
                         Budget = RaterBudget.Fast,
                         BaseSeed = baseSeed,
                     };
@@ -568,7 +536,7 @@ namespace BallSortGame.LevelEditor
             });
         }
 
-        /// <summary>The seeds as pack data; <paramref name="hidden"/> marks the "?" cells, which the game keeps hidden.</summary>
+        /// <summary>The seeds as pack data. <paramref name="hidden"/> marks the balls the game keeps hidden.</summary>
         static LevelData BuildSeeds(List<GeneratedLevel> results, List<List<int>> hidden)
         {
             LevelData Make(GeneratedLevel g) => new LevelData { PuzzleId = g.Id, Tubes = g.TubesTopFirst, TubeKinds = g.TubeKinds, Heavy = g.Heavy, Steps = g.Steps, Difficulty = g.Bucket, Hidden = hidden };
@@ -578,9 +546,8 @@ namespace BallSortGame.LevelEditor
         }
 
         /// <summary>
-        /// Puts the seeds into the pack the game plays: the layout's slot is replaced, a new level (slot 0 or past the
-        /// end) is appended and becomes that slot. The game's loaded pack is updated in place, so it plays the new
-        /// level at once, and the JSON is written so it survives a restart.
+        /// Puts the seeds into the pack: replaces the layout's slot, or appends a new level. The loaded pack is
+        /// updated in place so the game plays it at once, and the JSON is written so it survives a restart.
         /// </summary>
         void WritePack()
         {
@@ -593,10 +560,24 @@ namespace BallSortGame.LevelEditor
                 if (stage == null) stage = new StageData { StageId = Path.GetFileNameWithoutExtension(path) };
                 int slot = _level.Slot;
                 bool replaced = slot >= 1 && slot <= stage.Levels.Count;
-                if (replaced) stage.Levels[slot - 1] = seeds;
+                int lostFills = 0;
+                if (replaced)
+                {
+                    // keep what the editor does not make: the slot's hard flags and dlb fills
+                    var old = stage.Levels[slot - 1];
+                    if (old != null)
+                    {
+                        seeds.IsHard ??= old.IsHard;
+                        seeds.IsSuperHard ??= old.IsSuperHard;
+                        if (seeds.DlbVariants == null) { seeds.DlbVariants = old.DlbVariants; seeds.DlbCap ??= old.DlbCap; }
+                        lostFills = Math.Max(0, old.SeedCount - seeds.SeedCount);
+                    }
+                    stage.Levels[slot - 1] = seeds;
+                }
                 else { stage.Levels.Add(seeds); slot = stage.Levels.Count; _level.Slot = slot; }
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 File.WriteAllText(path, JsonConvert.SerializeObject(stage));
+                if (!Application.isEditor) LevelLoader.MarkSaved(game.levelPackResource);
 #if UNITY_EDITOR
                 UnityEditor.AssetDatabase.Refresh();
 #endif
@@ -605,7 +586,7 @@ namespace BallSortGame.LevelEditor
                 RefreshPackLabel();
                 RefreshSlotLabel();
                 Status(replaced
-                    ? $"Level {slot} replaced in {where} ({stage.Levels.Count} levels). Seed difficulty: {buckets}."
+                    ? $"Level {slot} replaced in {where} ({stage.Levels.Count} levels). Seed difficulty: {buckets}." + (lostFills > 0 ? $" {lostFills} older fill(s) of this slot were dropped." : "")
                     : $"Saved as new level {slot} of {where} ({stage.Levels.Count} levels). Seed difficulty: {buckets}.", EditorUI.Good);
             }
             catch (Exception e)
@@ -643,9 +624,7 @@ namespace BallSortGame.LevelEditor
             _jobDone?.Invoke();
         }
 
-        // =====================================================================
-        // UI construction (game skin over the board, laid out like the HUD at 1080x2340)
-        // =====================================================================
+        // --- UI, built at runtime and laid out like the HUD at 1080x2340
 
         void BuildUI()
         {
@@ -662,7 +641,7 @@ namespace BallSortGame.LevelEditor
             var root = (RectTransform)canvasGo.transform;
             var skin = EditorUI.Skin;
 
-            // ---- editor overlay: transparent, the board shows through
+            // editor overlay: transparent, the board shows through
             var panel = EditorUI.Rect("Editor", root);
             EditorUI.Stretch(panel, Vector2.zero, Vector2.zero);
             SafeAreaFitter.Attach(panel);   // the rows hang from the panel's edges: keep them out of the cutout / gesture bar
@@ -687,7 +666,7 @@ namespace BallSortGame.LevelEditor
             _capText = EditorUI.SkinStepper(sizes, "HEIGHT", d => Edit(() => _level.SetCapacity(_level.Capacity + d)), 336f);
             _colorsText = EditorUI.SkinStepper(sizes, "COLOURS", d => Edit(() => _level.SetColorCount(_level.ColorCount + d, PaletteSize)), 336f);
 
-            // level row: which pack slot is being edited, and a number box + GO to jump to a slot (or start a new level)
+            // level row: the slot being edited, and a number box + GO to jump to another
             var levelRow = EditorUI.Row("level", panel, true, 346f, 100f, 16f);
             var slotPill = EditorUI.Image("slot_label", levelRow, EditorUI.PillSprite, EditorUI.Tint(skin?.pill, EditorUI.Bar), true);
             EditorUI.Flex(slotPill, 1f);
@@ -704,7 +683,6 @@ namespace BallSortGame.LevelEditor
             if (_goField.targetGraphic is Image goBg) { goBg.sprite = EditorUI.PillSprite; goBg.color = EditorUI.Tint(skin?.pill, EditorUI.Bar); }
             EditorUI.PillButton(levelRow, "GO", true, Go, 170f, 44);
 
-            // pack row: which pack the game plays, and the bot that plays it through
             BuildPackRow(panel);
 
             // actions above the palette
@@ -717,7 +695,7 @@ namespace BallSortGame.LevelEditor
 
             BuildPalette(panel);
 
-            // ---- floating "back to the editor" pill shown while testing, above the booster bar
+            // "< EDITOR" pill shown while testing, above the booster bar
             var back = EditorUI.PillButton(root, "< EDITOR", false, BackToEditor, 360f, 44);
             var brt = (RectTransform)back.transform;
             brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0f);
@@ -730,7 +708,7 @@ namespace BallSortGame.LevelEditor
             BuildBotUI(root);
         }
 
-        /// <summary>Palette at the bottom: the colours in use, "?", the HEAVY, IN and OUT tools and the eraser; the selected one wears a frame.</summary>
+        /// <summary>Palette at the bottom: colours, "?", the tools and the eraser. The selected one wears a frame.</summary>
         void BuildPalette(Transform parent)
         {
             var band = EditorUI.Band("palette", parent, false, 36f, 250f);
@@ -818,7 +796,7 @@ namespace BallSortGame.LevelEditor
             }
             else if (value == InOnlyTool || value == OutOnlyTool)
             {
-                // the tube kind tools: the arrow drawn under one-way tubes, pointing down for IN and up for OUT
+                // the one-way arrow, down for IN and up for OUT
                 img.sprite = EditorUI.SquareSprite;
                 img.color = EditorUI.Tint(skin?.buttonSquare, EditorUI.ButtonColor);
                 img.type = Image.Type.Sliced;
@@ -847,10 +825,6 @@ namespace BallSortGame.LevelEditor
             }
             return img;
         }
-
-        // =====================================================================
-        // Refresh
-        // =====================================================================
 
         void Refresh()
         {
@@ -910,7 +884,7 @@ namespace BallSortGame.LevelEditor
             int cap = _level.Capacity;
             foreach (var s in _swatches)
             {
-                bool shown = s.Value <= _level.ColorCount;   // colours beyond the COLOURS count stay hidden; ?, tools and eraser are <= 0
+                bool shown = s.Value <= _level.ColorCount;   // colours past COLOURS stay hidden (?, tools and eraser are <= 0)
                 s.Root.SetActive(shown);
                 if (!shown) continue;
                 s.Frame.enabled = s.Value == _selected;

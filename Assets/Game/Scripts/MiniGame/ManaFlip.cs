@@ -5,15 +5,9 @@ using UnityEngine;
 namespace BallSortGame.MiniGame
 {
     /// <summary>
-    /// Rules and saved state of the Mana Flip mini game.
-    ///
-    /// A play is earned by winning levels on the first try, in a row: stage 1 needs <see cref="StageLevels"/>[0] of
-    /// them, stage 2 the next entry and so on; the last stage wraps back to the first. A level that needs a retry
-    /// drops the streak to zero. The play is free: the player flips the <see cref="CardCount"/> face-down cards,
-    /// each hiding one of the <see cref="ItemKinds"/> reward items; open cards stay open and the play ends on the first
-    /// item with <see cref="MatchCount"/> copies showing, which pays that item's prize for the stage
-    /// (<see cref="StageRewards"/>) - one prize per play. Then the stage advances and a new board is dealt for the next
-    /// play. A play that is left half way resumes where it was.
+    /// Rules and saved state of Mana Flip. A play is earned by a streak of first-try level wins, the length set per
+    /// stage. A retry drops the streak to zero. In a play the player flips cards until one item shows
+    /// <see cref="MatchCount"/> copies, which pays that item's prize and advances the stage. A half-done play resumes.
     /// </summary>
     [Serializable]
     public class ManaFlip
@@ -33,12 +27,12 @@ namespace BallSortGame.MiniGame
         {
             [Tooltip("One-try level wins in a row that earn a play at this stage.")]
             [Min(1)] public int Levels = 3;
-            [Tooltip("Coins paid for the first item matched: potion, crystal, star.")]
+            [Tooltip("Coins for matching potion, crystal, star.")]
             public int[] Rewards = { 100, 150, 200 };
         }
 
         [Header("Stages")]
-        [Tooltip("Played in order; after the last one the first comes round again.")]
+        [Tooltip("Played in order, wrapping back to the first.")]
         public Stage[] Stages =
         {
             new Stage { Levels = 3, Rewards = new[] { 100, 150, 200 } },
@@ -66,12 +60,12 @@ namespace BallSortGame.MiniGame
         public int[] StageRewards => CurrentStage.Rewards ?? new int[0];
         public int Reward(int item) => item >= 0 && item < StageRewards.Length ? StageRewards[item] : 0;
 
-        /// <summary>Card values, <see cref="CardCount"/> long, 0 .. <see cref="ItemKinds"/>-1.</summary>
+        /// <summary>Item of each card, 0 to ItemKinds - 1.</summary>
         public IReadOnlyList<int> Cards => _cards;
         public bool IsRevealed(int card) => card >= 0 && card < _revealed.Length && _revealed[card];
-        /// <summary>Copies of <paramref name="item"/> revealed so far on this board.</summary>
+        /// <summary>Copies of the item revealed so far on this board.</summary>
         public int Found(int item) => item >= 0 && item < ItemKinds ? _found[item] : 0;
-        /// <summary>The play ended: an item reached <see cref="MatchCount"/> (-1 while the play is on).</summary>
+        /// <summary>The item that ended the play, or -1 while the play is on.</summary>
         public int Matched { get; private set; } = -1;
         public bool RoundOver => Matched >= 0;
 
@@ -110,7 +104,6 @@ namespace BallSortGame.MiniGame
             if (AnyMatched() >= 0) NewBoard();   // a finished play is never shown again
         }
 
-        /// <summary>Shuffles a fresh board and clears the reveals.</summary>
         public void NewBoard()
         {
             _cards = new int[CardCount];
@@ -129,9 +122,8 @@ namespace BallSortGame.MiniGame
         }
 
         /// <summary>
-        /// Records a won level. A first-try win grows the streak; any other drops it to zero. Returns true when the
-        /// streak reached the stage's goal: a play is earned and the streak starts over. Wins while a play is still
-        /// unplayed do not count.
+        /// Counts a won level towards the streak. Returns true when it earns a play. Wins do not count while a play
+        /// is still waiting.
         /// </summary>
         public bool OnLevelWon(bool oneShot)
         {
@@ -149,8 +141,7 @@ namespace BallSortGame.MiniGame
         }
 
         /// <summary>
-        /// Turns <paramref name="card"/> over. Refused when there is no play, the card is already open or the play is
-        /// over. A Reward result ended the play: <paramref name="reward"/> was just paid for <paramref name="item"/>.
+        /// Turns a card over. A Reward result ends the play, and the reward is already paid.
         /// </summary>
         public FlipResult TryFlip(int card, out int item, out int reward)
         {
@@ -191,7 +182,7 @@ namespace BallSortGame.MiniGame
             PlayerPrefs.Save();
         }
 
-        /// <summary>Debug: clears the streak, the stage and any earned plays.</summary>
+        /// <summary>Debug: clears the streak, stage and earned plays.</summary>
         public void ResetProgress()
         {
             StageIndex = 0;
@@ -200,7 +191,7 @@ namespace BallSortGame.MiniGame
             NewBoard();
         }
 
-        /// <summary>Debug: grants a play at the current stage.</summary>
+        /// <summary>Debug only.</summary>
         public void GrantPlay()
         {
             Plays++;

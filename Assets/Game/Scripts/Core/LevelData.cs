@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Newtonsoft.Json;
 using UnityEngine;
 
 namespace BallSortGame.Core
 {
     /// <summary>
-    /// Level pack format of the reference game ("StageData" JSON under Resources/data/):
-    /// { "stage_id": "levels", "levels": [ { "puzzle_id": "...", "tubes": [[top..bottom], ...], "steps": [[from,to],...] } ] }
-    /// Tubes are listed TOP-first, 0 = empty slot, colors 1..N. Capacity = array length.
+    /// Level pack JSON under Resources/data/. Tubes are listed TOP-first, 0 = empty slot, colours 1..N,
+    /// capacity = array length.
     /// </summary>
     [Serializable]
     public class StageData
@@ -23,24 +23,23 @@ namespace BallSortGame.Core
         [JsonProperty("puzzle_id")] public string PuzzleId;
         [JsonProperty("tubes")] public List<List<int>> Tubes = new List<List<int>>();
         [JsonProperty("steps")] public List<List<int>> Steps = new List<List<int>>();
-        /// <summary>Per-tube <see cref="TubeKind"/> (0 normal, 1 in-only, 2 out-only, 4 hidden); absent = every tube normal.</summary>
+        /// <summary>Per-tube kind (0 normal, 1 in-only, 2 out-only, 4 hidden). Absent = all normal.</summary>
         [JsonProperty("tube_kinds", NullValueHandling = NullValueHandling.Ignore)] public List<int> TubeKinds;
         /// <summary>
-        /// Hidden balls, parallel to <see cref="Tubes"/> (top-first, 1 = the ball's colour is hidden until it becomes the
-        /// top ball of its tube); absent = every ball visible. The level editor's "?" cells.
+        /// Hidden ("?") balls, parallel to <see cref="Tubes"/>, top-first. 1 = the colour stays hidden until the ball
+        /// reaches the top. Absent = all visible.
         /// </summary>
         [JsonProperty("hidden", NullValueHandling = NullValueHandling.Ignore)] public List<List<int>> Hidden;
         /// <summary>
-        /// Heavy balls (the cannonball obstacle), one bit mask per tube: bit s set = the s-th ball from the bottom is
-        /// heavy (so 1 = the bottom ball, the old form). A heavy ball is a normal coloured ball that moves alone and only
-        /// into an empty tube, where it lands at the bottom; a run of balls above it moves without it. Absent = none.
+        /// Heavy balls, one bit mask per tube: bit s = the s-th ball from the bottom (so 1 = the bottom ball).
+        /// Absent = none.
         /// </summary>
         [JsonProperty("heavy", NullValueHandling = NullValueHandling.Ignore)] public List<int> Heavy;
 
-        // ---- optional fields written by the level generator (absent in the reference packs) ----
-        /// <summary>Difficulty bucket 1..7 (Magic Sort bot scale) of this fill.</summary>
+        // --- optional, written by the level generator
+        /// <summary>Difficulty bucket 1..7 of this fill.</summary>
         [JsonProperty("difficulty", NullValueHandling = NullValueHandling.Ignore)] public int? Difficulty;
-        /// <summary>Alternative fills of the same design, played on retries (seed k on attempt k, then random, never the last one).</summary>
+        /// <summary>Other fills of the same design, played on retries.</summary>
         [JsonProperty("variants", NullValueHandling = NullValueHandling.Ignore)] public List<LevelData> Variants;
         /// <summary>Easier fills used after <see cref="DlbCap"/> failed attempts (dynamic level balancing).</summary>
         [JsonProperty("dlb_variants", NullValueHandling = NullValueHandling.Ignore)] public List<LevelData> DlbVariants;
@@ -48,15 +47,15 @@ namespace BallSortGame.Core
         [JsonProperty("hard", NullValueHandling = NullValueHandling.Ignore)] public bool? IsHard;
         [JsonProperty("super_hard", NullValueHandling = NullValueHandling.Ignore)] public bool? IsSuperHard;
 
-        /// <summary>All fills of this level slot: this one first, then <see cref="Variants"/>.</summary>
+        /// <summary>This fill plus its <see cref="Variants"/>.</summary>
         [JsonIgnore] public int SeedCount => 1 + (Variants?.Count ?? 0);
 
         public LevelData SeedAt(int index) => index <= 0 || Variants == null ? this : Variants[Math.Min(index - 1, Variants.Count - 1)];
 
         /// <summary>
-        /// Fill to play on the given attempt (0 = first try), following the Magic Sort rule: seed k on attempt k,
-        /// then a random one that is not <paramref name="lastPlayedIndex"/>; after <see cref="DlbCap"/> attempts the
-        /// dlb fills take over. Returns the chosen fill and its index (dlb indices are offset by 1000).
+        /// Fill for this attempt (0 = first try): seed k on attempt k, then a random one other than
+        /// <paramref name="lastPlayedIndex"/>. After <see cref="DlbCap"/> attempts the dlb fills take over,
+        /// their indices offset by 1000.
         /// </summary>
         public LevelData ForAttempt(int attempt, int lastPlayedIndex, System.Random rng, out int index)
         {
@@ -68,20 +67,14 @@ namespace BallSortGame.Core
 
         public TubeKind KindOf(int tube) => TubeKinds != null && tube < TubeKinds.Count ? (TubeKind)TubeKinds[tube] : TubeKind.Normal;
 
-        /// <summary>Whether the ball at <paramref name="topFirstIndex"/> of <paramref name="tube"/> starts hidden.</summary>
+        /// <summary>Whether this ball starts hidden.</summary>
         public bool IsHidden(int tube, int topFirstIndex) =>
             Hidden != null && tube < Hidden.Count && Hidden[tube] != null && topFirstIndex < Hidden[tube].Count && Hidden[tube][topFirstIndex] != 0;
 
-        /// <summary>Heavy balls of <paramref name="tube"/> as a bit mask (bit s = the s-th ball from the bottom).</summary>
+        /// <summary>Bit s = the s-th ball from the bottom.</summary>
         public int HeavyMask(int tube) => Heavy != null && tube < Heavy.Count && Heavy[tube] > 0 ? Heavy[tube] : 0;
 
-        /// <summary>Whether the <paramref name="ballFromBottom"/>-th ball (0 = bottom) of <paramref name="tube"/> is heavy.</summary>
         public bool IsHeavyAt(int tube, int ballFromBottom) => ballFromBottom >= 0 && ballFromBottom < 31 && ((HeavyMask(tube) >> ballFromBottom) & 1) != 0;
-
-        [JsonIgnore] public bool HasHeavyBalls
-        {
-            get { if (Heavy == null) return false; foreach (var h in Heavy) if (h != 0) return true; return false; }
-        }
 
         [JsonIgnore] public bool HasHiddenBalls
         {
@@ -118,9 +111,69 @@ namespace BallSortGame.Core
 
     public static class LevelLoader
     {
-        /// <summary>Loads a stage file from Resources (e.g. "data/levels").</summary>
+        /// <summary>
+        /// Where the in-app level editor saves the pack on a device, since the APK's Resources are read-only.
+        /// A development build loads it instead of the bundled pack, so edits survive a restart.
+        /// </summary>
+        public static string SavedPackPath(string resourcePath) =>
+            Path.Combine(Application.persistentDataPath, "LevelEditor", Path.GetFileName(resourcePath) + ".json");
+
+        /// <summary>Side file with the hash of the bundled pack the save was made on.</summary>
+        static string BasePath(string resourcePath) => SavedPackPath(resourcePath) + ".base";
+
+        /// <summary>FNV-1a hash of the bundled pack's text, or "" when there is none.</summary>
+        static string BundledHash(string resourcePath)
+        {
+            var text = Resources.Load<TextAsset>(resourcePath);
+            if (text == null) return "";
+            ulong h = 1469598103934665603UL;
+            foreach (char c in text.text) { h ^= c; h *= 1099511628211UL; }
+            return h.ToString("x16");
+        }
+
+        /// <summary>Records which bundled pack the level editor's save was made on.</summary>
+        public static void MarkSaved(string resourcePath)
+        {
+            try { File.WriteAllText(BasePath(resourcePath), BundledHash(resourcePath)); }
+            catch (Exception e) { Debug.LogWarning("Level editor: could not mark the saved pack: " + e.Message); }
+        }
+
+        static bool SavedOnCurrentPack(string resourcePath)
+        {
+            try { return File.Exists(BasePath(resourcePath)) && File.ReadAllText(BasePath(resourcePath)).Trim() == BundledHash(resourcePath); }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>
+        /// Loads a stage file (e.g. "data/levels"). A development build on a device prefers the level editor's save,
+        /// if it was made on the current bundled pack.
+        /// </summary>
         public static StageData LoadStage(string resourcePath)
         {
+            if (!Application.isEditor && Debug.isDebugBuild)
+            {
+                string saved = SavedPackPath(resourcePath);
+                // a save made on an older bundled pack (an earlier APK) is stale: the new build's pack wins
+                if (File.Exists(saved) && !SavedOnCurrentPack(resourcePath))
+                    Debug.Log($"Level editor save {saved} was made with a different bundled pack; using the bundled pack.");
+                else if (File.Exists(saved))
+                {
+                    try
+                    {
+                        var stage = JsonConvert.DeserializeObject<StageData>(File.ReadAllText(saved));
+                        if (stage != null && stage.Levels.Count > 0)
+                        {
+                            Debug.Log($"Level pack loaded from the level editor's save: {saved} ({stage.Levels.Count} levels)");
+                            return stage;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"Level editor save {saved} could not be read, using the bundled pack: {e.Message}");
+                    }
+                }
+            }
+
             var text = Resources.Load<TextAsset>(resourcePath);
             if (text == null)
             {

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
@@ -20,10 +19,8 @@ namespace BallSortGame.Core
     }
 
     /// <summary>
-    /// Iterative depth-first solver, modelled on BallSort.Solver.BallSortSolver of the reference game:
-    /// visited-hash pruning, candidate scoring, skipping the immediate reverse move and "pure relocations"
-    /// (moving an entire uniform tube into an empty tube), and a state/time budget.
-    /// Used for dead-end ("no moves") detection and hints.
+    /// Greedy depth-first solver with visited-hash pruning and scored moves. Skips undoing the last move and
+    /// pouring a whole one-colour tube into an empty one. Used for dead-end detection and hints.
     /// </summary>
     public sealed class BallSortSolver
     {
@@ -83,7 +80,6 @@ namespace BallSortGame.Core
                 if (next.IsWin())
                 {
                     Solution = new List<SolverMove>();
-                    foreach (var f in _stack) { } // stack enumerates top-first; rebuild below
                     var frames = _stack.ToArray(); // top first
                     for (int i = frames.Length - 1; i >= 0; i--)
                     {
@@ -111,9 +107,7 @@ namespace BallSortGame.Core
             int n = s.TubeCount;
             for (int from = 0; from < n; from++)
             {
-                // source tube eligible = not empty, not completed (unless allowed)
                 if (!s.CanExport(from, allowBreakCompletedTube)) continue;
-                int fromRun = s.TopRun(from);
                 bool fromUniform = s.IsUniform(from);
                 int topColor = s.TopColor(from);
                 bool seenEmptyTarget = false;
@@ -126,15 +120,15 @@ namespace BallSortGame.Core
 
                     bool toEmpty = s.IsEmpty(to);
                     bool plain = s.IsPlainEmpty(to) && s.KindOf(from) == TubeKind.Normal;
-                    // pure relocation: whole uniform tube -> empty tube changes nothing (unless a special tube is involved)
+                    // moving a whole one-colour tube into a plain empty tube changes nothing
                     if (plain && fromUniform && count == s.Count(from)) continue;
-                    // all plain empty tubes are equivalent: only try the first one
+                    // plain empty tubes are all alike, so only try the first
                     if (plain)
                     {
                         if (seenEmptyTarget) continue;
                         seenEmptyTarget = true;
                     }
-                    // immediate reverse of the parent move
+                    // don't undo the last move
                     if (frame.HasParent && frame.Parent.From == to && frame.Parent.To == from && frame.Parent.Count == count) continue;
 
                     int score;

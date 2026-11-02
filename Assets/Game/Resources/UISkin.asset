@@ -16,19 +16,12 @@ MonoBehaviour:
   buttonSquare: {fileID: 6798526734771333618, guid: 5c19218dcd728b740a8b690008cd6297, type: 3}
   buttonRect: {fileID: 8444137150595184845, guid: 423d26d82b8c35f4a8e031496f509241, type: 3}
   buttonRectGreen: {fileID: -5880081054993603791, guid: 7a7a2679ef7c9d249ac3e647ab2575a7, type: 3}
-  buttonRectRed: {fileID: 8339468318816200683, guid: 15c1b32dfbe5f4c47b171b80d82efd7a, type: 3}
-  circleFrame: {fileID: 4077075306979237286, guid: 2807b4a8b2f686448952b17ea72dc10b, type: 3}
   squareFrame: {fileID: 6140779336936362642, guid: ee4a9933042bcce43a0e1a3057444518, type: 3}
   greenCircle: {fileID: -4005616461697300103, guid: 7f1ac639e187b5e40a4ab3f5e4d5676b, type: 3}
-  redCircle: {fileID: 4440765403029788085, guid: f0cb6c91e4d1b1140b7a55f3a031ed53, type: 3}
   buttonPill: {fileID: -960109724082120967, guid: a63db61880f97c64db2b9fc508f6fd4f, type: 3}
   popupPanel: {fileID: 7465084024967165542, guid: ffc69837ec1fdee43a0b2dd99727854d, type: 3}
   pill: {fileID: -5385997019016839393, guid: 8d235de94ad335746a290ec2fe4837a4, type: 3}
-  panelFlat: {fileID: 8573436538733981863, guid: ea9c7d1738071e541bc1527b085262ef, type: 3}
   overlay: {fileID: -8267787123667906418, guid: 4911e2f46dd91954cae6bde50d620c9e, type: 3}
-  settingsBackground: {fileID: -6076233374363088374, guid: 9818863d420c4d042b15d8a69870ca7b, type: 3}
-  settingsBackgroundFlat: {fileID: 7658782122812223523, guid: 52300a270691dcf4bb8f30e8a4fc9f10, type: 3}
-  settingsBar: {fileID: 9214711633586681329, guid: 815f1b2a749f6f9439bd77811c67e89f, type: 3}
   rewardStar: {fileID: -8506573586941413340, guid: a63a4b9cdb623924b9b8f23cc49f31b3, type: 3}
   rewardPotion: {fileID: -3177723215961390456, guid: 9277a42ab846dea44946577f393f59bc, type: 3}
   rewardCrystal: {fileID: 3696492910410268661, guid: 24c06314d7f552a45a1766a2b5ef943b, type: 3}
@@ -37,28 +30,30 @@ MonoBehaviour:
   rewardGlow: {fileID: 4697805140899592234, guid: 037d4c8069a9df54f8554e84319cce07, type: 3}
   cardBackFound: {fileID: 4058467324566763456, guid: 36e63886a009dd94e986c4d1d14c8858, type: 3}
   coin: {fileID: -3338749442709606003, guid: 1b3337b78ae19d648a70b5e88317b086, type: 3}
-  heart: {fileID: 4606908045521496030, guid: c1a9aa784d8102c479cf1b172087bcc6, type: 3}
-  brokenHeart: {fileID: 1391684605842844687, guid: 8f16546e47c165a41a1ace1628c3e4e2, type: 3}
   logo: {fileID: 716431161638235888, guid: 85dab2c486886f345a974e8d388c9fa1, type: 3}
-  logoFull: {fileID: -4984975883372545945, guid: e6572ec6c94008e4fbb3dae1051e6dd3, type: 3}
   background: {fileID: -1955448553306655712, guid: 09e091a12bad23b4baebf373a96351ae, type: 3}
-  sparkle: {fileID: 4818315207294805664, guid: f28311025af32a24ea441814b6ef7916, type: 3}
+  pot: {fileID: 21300000, guid: 021249d94eb54424b83c1a6ad36990bf, type: 3}
+  soil: {fileID: 21300000, guid: 2af209b0c1e11d848b77eee247270233, type: 3}
+  flowers:
+  - {fileID: 21300000, guid: eab9bd0fb2a14a14f899ae8484e8a9cd, type: 3}
+  - {fileID: 21300000, guid: 05dda671949f9464dad2a407e3583443, type: 3}
+  - {fileID: 21300000, guid: 02638269da2dc8046b72312ae56a0619, type: 3}
+  - {fileID: 21300000, guid: c071867cf422f6b4583dc509905345a0, type: 3}
+  - {fileID: 21300000, guid: 10e9e7997f5b3cd4fbba21d925aec55a, type: 3}
+  flowersLit:
+  - {fileID: 21300000, guid: 47621180a6c6e4848a31ce1a44c26c7a, type: 3}
+  - {fileID: 21300000, guid: 553782d3c6aa5114bb840d07b208a292, type: 3}
+  - {fileID: 21300000, guid: 23772877ed5dcb9419fb78c50b1d43ba, type: 3}
+  - {fileID: 21300000, guid: ebae3b9d8b656ab4aa98e6b8e599bcb0, type: 3}
+  - {fileID: 21300000, guid: 129545b6df6e95e4d8eb70634e1dfb55, type: 3}
   iconClose: {fileID: -4781373940957465942, guid: 252cfffb8a7c82a4fa2b26ea172f2d21, type: 3}
-  iconHome: {fileID: 7635013726552783190, guid: d9fc69e143f13854e9e78ab3f26f709d, type: 3}
   iconSettings: {fileID: -3358933203163112000, guid: bda2435db2e026e4f9b8ec4454079a35, type: 3}
   iconRestart: {fileID: 6740597078148714491, guid: 35cbaa170e8b9e2498875247a9c3d6e2, type: 3}
   iconUndo: {fileID: 3714924146846992073, guid: 8af1e9c02c3a131448757469c1b9b8b7, type: 3}
-  iconShuffle: {fileID: -6935565481873381701, guid: e16155c4d328a814f97dc0b53bbe92fa, type: 3}
-  iconAddTube: {fileID: -8379058731350068504, guid: f85170bdc2c001342a3bfea78bce78f5, type: 3}
-  iconAddSmallTube: {fileID: 3756501056105056428, guid: 706ed026dcca5f3488b6668ff78bf27c, type: 3}
-  iconSound: {fileID: 8023777996216889834, guid: 708b20af5efd95a4c8e3b62c06a7f138, type: 3}
-  iconMusic: {fileID: 5044122071167073304, guid: ac75a0e82f328c34f82bb3973dc06d30, type: 3}
-  iconHaptic: {fileID: 968979224951117750, guid: 2dbef9619c6212e488c3ccd60ff64114, type: 3}
   iconCheck: {fileID: -5991587696965077061, guid: f42060b76e9f4cd43bf88f6f5576c123, type: 3}
   iconArrow: {fileID: -33067239104068978, guid: 109ff149917054b49bf2aa831fcb0886, type: 3}
   iconPlant: {fileID: 8591533231565066105, guid: 6cfa35e627f91c149ad78c02dcc37e1f, type: 3}
   font: {fileID: 12800000, guid: 470641a6864c13048bfa0d7b4ee5de35, type: 3}
-  wordLevel: {fileID: -5000488056336954749, guid: a2b18e520af830d49bfe08c1786ab2fe, type: 3}
   wordContinue: {fileID: -2271835489614291112, guid: fb270011472fc4b409410494d57d03f2, type: 3}
   wordHome: {fileID: -6112995604054834744, guid: 4be845b4bdf46174d809da4c7892848d, type: 3}
   wordTryAgain: {fileID: 3057419904054296746, guid: de5f1a6c3116bd845bfaee3def0b1eee, type: 3}
@@ -66,14 +61,3 @@ MonoBehaviour:
   wordOutOfMoves: {fileID: 5734648952801903356, guid: f62ef70028549cf4a873f5b130d0713a, type: 3}
   wordManaFlip: {fileID: 7952178481527570489, guid: ae20f3ffaf12df74b84ad0a2e4ec4461, type: 3}
   wordManaGarden: {fileID: 1408414808035628056, guid: 0bc5c01098c868740959463c056eb4d1, type: 3}
-  digits:
-  - {fileID: 0}
-  - {fileID: -4999477780000286445, guid: a2b18e520af830d49bfe08c1786ab2fe, type: 3}
-  - {fileID: 0}
-  - {fileID: 4818666962548292046, guid: 3773ea704f3c90a438938615296784c6, type: 3}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}

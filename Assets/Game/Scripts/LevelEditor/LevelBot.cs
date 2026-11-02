@@ -10,14 +10,10 @@ using UnityEngine;
 namespace BallSortGame.LevelEditor
 {
     /// <summary>
-    /// Plays the loaded level pack from a given level to the end (or one fill alone, <see cref="RunSingle"/>) on the
-    /// real board, the way a player would: every
-    /// level is audited (<see cref="LevelAudit"/>) and solved on a worker thread, then the bot taps the tubes of the
-    /// solution through <see cref="GameManager.OnTubeClick"/> and waits for the animations like a finger would.
-    /// The other fills of a slot (variants, dlb) are solver-checked in the background while the main fill is played.
-    /// Everything that is wrong ends up in <see cref="Issues"/>: malformed or unsolvable fills, fills the solver
-    /// cannot decide, stored steps that do not work, duplicate ids, and mismatches between the solver's rules and the
-    /// game's (a solver move the board rejects, a "no moves" popup on a solvable line, a solution that does not win).
+    /// Plays the loaded pack from a given level to the end, or one fill alone, on the real board like a player.
+    /// Each level is audited and solved on a worker thread, then the bot taps the solution's tubes and waits for the
+    /// animations. The slot's other fills are only solver-checked. Every problem lands in <see cref="Issues"/>,
+    /// including places where the solver's rules and the game's disagree.
     /// </summary>
     public sealed class LevelBot : MonoBehaviour
     {
@@ -26,12 +22,11 @@ namespace BallSortGame.LevelEditor
         public float Speed = 4f;
 
         public bool IsRunning { get; private set; }
-        /// <summary>The one fill being played alone (the editor's "this level"); null while the pack is played.</summary>
+        /// <summary>The one fill played alone (the editor's THIS LEVEL). Null while the pack is played.</summary>
         public LevelData Single { get; private set; }
-        /// <summary>Place name of <see cref="Single"/> in the status, the issues and the report.</summary>
+        /// <summary>Name of <see cref="Single"/> in the status, issues and report.</summary>
         public string SingleName { get; private set; }
         public int FromLevel { get; private set; }
-        public int CurrentLevel { get; private set; }
         public int LevelCount { get; private set; }
         public int Played { get; private set; }
         public int Won { get; private set; }
@@ -62,7 +57,7 @@ namespace BallSortGame.LevelEditor
             Begin(RunRoutine());
         }
 
-        /// <summary>Plays one fill alone (the editor's current level) as the override level, then reports on it.</summary>
+        /// <summary>Plays one fill alone as the override level, then reports on it.</summary>
         public void RunSingle(LevelData level, string name)
         {
             if (IsRunning || level == null) return;
@@ -98,7 +93,7 @@ namespace BallSortGame.LevelEditor
             foreach (var i in issues) i.Label = SingleName;
         }
 
-        /// <summary>Stops after the current move; the report then covers what was played so far.</summary>
+        /// <summary>Stops after the current move. The report covers what was played so far.</summary>
         public void Stop() => _stop = true;
 
         void OnNoMoves() => _noMoves = true;
@@ -149,7 +144,6 @@ namespace BallSortGame.LevelEditor
         IEnumerator AuditAndPlay(LevelData slot, int lv)
         {
             Time.timeScale = Speed;
-            CurrentLevel = lv;
             Status = $"{Where(lv)}: solving...";
 
             // show the level while the worker thread audits and solves it

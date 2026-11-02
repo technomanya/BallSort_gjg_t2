@@ -9,9 +9,7 @@ using UnityEngine.UI;
 namespace BallSortGame.UI
 {
     /// <summary>
-    /// In-game HUD laid out after the mockups: top bar (restart / level / home / settings), booster bar at the bottom
-    /// (undo / shuffle / add tube / little tube plus the 'i' info panel), the full-screen settings page and the
-    /// "Out of moves" and "Well done" popups. The mini game opens from the main menu (<see cref="MainMenuView"/>).
+    /// In-game HUD: top bar, booster bar, the settings page and the win and out-of-moves popups.
     /// </summary>
     public class GameHUD : MonoBehaviour
     {
@@ -22,7 +20,7 @@ namespace BallSortGame.UI
         [Tooltip("Top left: restarts the level.")]
         public Button resetButton;
         public Button settingsButton;
-        [Tooltip("Optional coin button: opens the mini game (Mana Flip). Not built by Rebuild HUD; the mini game opens from the main menu.")]
+        [Tooltip("Optional coin button that opens Mana Flip.")]
         public Button miniGameButton;
         public GameObject settingsPanel;
         public Button homeButton;
@@ -37,7 +35,7 @@ namespace BallSortGame.UI
         [Tooltip("Adds the one-ball little tube (once per level).")]
         public Button smallTubeButton;
         public Text smallTubeCountText;
-        [Tooltip("The small 'i' on the bar; toggles the booster descriptions panel.")]
+        [Tooltip("The 'i' on the bar, toggles the booster info panel.")]
         public Button boosterInfoButton;
         public GameObject boosterInfoPanel;
 
@@ -51,16 +49,16 @@ namespace BallSortGame.UI
         public Button noMoveUndoButton;
         public Button noMoveAddTubeButton;
         public Button noMoveCloseButton;
-        [Tooltip("Paid continue: takes back the last few moves for coins so the player can try to finish.")]
+        [Tooltip("Paid continue: takes back a few moves for coins.")]
         public Button noMoveContinueButton;
         public Text noMoveContinueCostText;
-        [Tooltip("Coins charged by the continue button of the out-of-moves popup.")]
+        [Tooltip("Coins charged by the continue button.")]
         public int continueCost = 900;
         [Tooltip("Moves taken back by the continue button.")]
         public int continueRewindMoves = 3;
 
         [Header("Main menu")]
-        [Tooltip("Opened by the Home button; without it Home restarts level 1.")]
+        [Tooltip("Opened by Home. Without it Home restarts level 1.")]
         public MainMenuView mainMenu;
 
         [Header("Toast")]
@@ -80,7 +78,7 @@ namespace BallSortGame.UI
             // keep the bars clear of the cutout / status bar at the top and the gesture bar at the bottom
             foreach (string bar in new[] { "top_bar", "booster_bar", "booster_info", "toast" })
                 SafeAreaFitter.Attach(transform.Find(bar));
-            Hook(resetButton, () => game.Restart());
+            Hook(resetButton, () => { if (!WinPending) game.Restart(); });
             Hook(settingsButton, () => SetSettings(!(settingsPanel != null && settingsPanel.activeSelf)));
             Hook(miniGameButton, OpenMiniGame);
             Hook(settingsCloseButton, () => SetSettings(false));
@@ -106,11 +104,8 @@ namespace BallSortGame.UI
             SetSettings(false);
         }
 
-        /// <summary>
-        /// Measures how much of the screen height the top bar (down to the LEVEL pill's bottom edge) and the booster bar
-        /// take and hands it to the game, so the camera fit follows the real layout: the safe area moves the bars, and on
-        /// 16:9 phones or tablets the fixed-size bars take a bigger share than in the 1080x2340 reference.
-        /// </summary>
+        // hands the screen share of the bars to the game, so the camera fit follows the real layout
+        // (the safe area moves the bars, and short or wide screens give them a bigger share)
         void LateUpdate()
         {
             if (game == null) return;
@@ -127,7 +122,7 @@ namespace BallSortGame.UI
             game.SetHudBands(Mathf.Clamp01(top), Mathf.Clamp01(bottom));
         }
 
-        /// <summary>Screen y (pixels from the bottom) of a rect's bottom or top edge.</summary>
+        // screen y of a rect's bottom or top edge
         float EdgeY(RectTransform rt, Camera camera, bool bottomEdge)
         {
             rt.GetWorldCorners(_corners);   // 0 bottom-left, 1 top-left, 2 top-right, 3 bottom-right
@@ -137,12 +132,12 @@ namespace BallSortGame.UI
 
         void GoHome()
         {
+            if (WinPending) return;
             SetSettings(false);
             if (mainMenu != null) mainMenu.Open();
             else game.StartLevel(1);
         }
 
-        /// <summary>Coin button: the Mana Flip board over the paused game (its close button comes back here).</summary>
         void OpenMiniGame()
         {
             var manaFlip = FindFirstObjectByType<ManaFlipView>(FindObjectsInactive.Include);
@@ -186,10 +181,22 @@ namespace BallSortGame.UI
             if (go != null) go.SetActive(on);
         }
 
+        // between the winning move and the win popup: a restart would drop the rewards and a page opened now would sit under the popup
+        bool WinPending => game != null && game.IsGameOver && !(successView != null && successView.activeSelf);
+
+        public void OpenSettings() => SetSettings(true);
+
         void SetSettings(bool on)
         {
+            if (on && WinPending) return;
             Show(settingsPanel, on);
-            // the mockup settings page stands alone over the dimmed board: the bars go away while it is up
+            // moved last so it draws above every page, popups included, whatever the scene order
+            if (on && settingsPanel != null)
+            {
+                settingsPanel.transform.SetAsLastSibling();
+                if (toast != null && toast.transform.parent == settingsPanel.transform.parent) toast.transform.SetAsLastSibling();   // toasts stay on top
+            }
+            // the bars hide while the settings page is up
             foreach (string bar in new[] { "top_bar", "booster_bar" })
             {
                 var t = transform.Find(bar);
@@ -200,7 +207,7 @@ namespace BallSortGame.UI
 
         void OnLevelStarted(int level, LevelData data)
         {
-            WordLabel.Show(levelText, $"LEVEL {level}", level);
+            if (levelText != null) levelText.text = $"LEVEL {level}";
             Show(successView, false);
             Show(noMoveView, false);
             Show(boosterInfoPanel, false);
@@ -236,7 +243,6 @@ namespace BallSortGame.UI
             Show(noMoveView, true);
         }
 
-        /// <summary>Continue button of the out-of-moves popup: pays the coins, then rewinds the last few moves.</summary>
         void ContinueForCoins()
         {
             if (Wallet.Coins < continueCost)

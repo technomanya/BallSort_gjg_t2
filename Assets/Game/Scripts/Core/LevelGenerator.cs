@@ -6,7 +6,7 @@ namespace BallSortGame.Core
     /// <summary>One concrete, rated fill of a design.</summary>
     public sealed class GeneratedLevel
     {
-        /// <summary>"&lt;design&gt;_difficulty&lt;bucket&gt;-&lt;variant&gt;", the Magic Sort seed naming.</summary>
+        /// <summary>"&lt;design&gt;_difficulty&lt;bucket&gt;-&lt;variant&gt;".</summary>
         public string Id;
         public string DesignName;
         public int Seed;
@@ -16,12 +16,12 @@ namespace BallSortGame.Core
         public LevelRating Rating;
 
         public List<List<int>> TubesTopFirst => LevelFiller.ToTopFirst(Board);
-        /// <summary>Per-tube kinds for the level JSON, null when every tube is normal.</summary>
+        /// <summary>Null when every tube is normal.</summary>
         public List<int> TubeKinds => Board.KindsOrNull();
-        /// <summary>Per-tube heavy-bottom flags for the level JSON, null when no ball is heavy.</summary>
+        /// <summary>Per-tube heavy masks, null when no ball is heavy.</summary>
         public List<int> Heavy => Board.HeavyOrNull();
 
-        /// <summary>Solution as [from, to] pairs (the level pack "steps" convention: the whole run moves).</summary>
+        /// <summary>Solution as [from, to] pairs. The whole run moves.</summary>
         public List<List<int>> Steps
         {
             get
@@ -40,7 +40,7 @@ namespace BallSortGame.Core
         public List<int> WantedBuckets = new List<int> { 1, 1, 1, 1, 1 };
         /// <summary>Accept a fill when its bucket is within this distance of a wanted bucket (0 = exact).</summary>
         public int Tolerance = 0;
-        /// <summary>After <see cref="MaxFills"/>, still-missing buckets are filled from the nearest rejected fills within this distance (0 = never).</summary>
+        /// <summary>Buckets still missing at the end take the nearest rejected fills within this distance (0 = never).</summary>
         public int FallbackTolerance = 1;
         /// <summary>Random fills tried before giving up on the remaining wanted buckets.</summary>
         public int MaxFills = 300;
@@ -50,15 +50,12 @@ namespace BallSortGame.Core
         public bool RejectSolvedTubes = true;
     }
 
-    /// <summary>
-    /// Builds rated seeds for a design: random-fill, rate, keep the fills whose bucket is wanted.
-    /// This is the offline counterpart of the Magic Sort pipeline (editor layout -> server fills -> bot buckets).
-    /// </summary>
+    /// <summary>Builds rated seeds for a design: random fill, rate, keep the fills whose bucket is wanted.</summary>
     public sealed class LevelGenerator
     {
         readonly LevelRater _rater = new LevelRater();
 
-        /// <summary>Progress callback: (fillsTried, accepted, wanted).</summary>
+        /// <summary>(fillsTried, accepted, wanted).</summary>
         public Action<int, int, int> Progress;
 
         public List<GeneratedLevel> Generate(LevelDesign design, GeneratorOptions options, out string error)
@@ -158,14 +155,12 @@ namespace BallSortGame.Core
             return result;
         }
 
-        /// <summary>Rates one existing board (e.g. a level from a pack).</summary>
         public LevelRating Rate(BoardState board, RaterBudget budget) => _rater.Rate(board, budget);
     }
 
     /// <summary>
-    /// Magic Sort's seed selection (LevelModelService.GetSeedIdFromConfig): attempt N plays seed N while the list
-    /// lasts, then a random seed that is not the one played last; after <paramref name="dlbCap"/> failed attempts
-    /// the easier <paramref name="dlbSeeds"/> list takes over the same way.
+    /// Picks the fill for an attempt: attempt N plays seed N while the list lasts, then a random seed other than
+    /// the last one played. After dlbCap failed attempts the easier dlb list takes over the same way.
     /// </summary>
     public static class SeedSelector
     {
@@ -179,7 +174,6 @@ namespace BallSortGame.Core
             return pick;
         }
 
-        /// <summary>Returns (useDlb, index).</summary>
         public static (bool useDlb, int index) Pick(int seedCount, int dlbSeedCount, int dlbCap, int attempt, int lastPlayed, Random rng)
         {
             if (dlbSeedCount > 0 && dlbCap > 0 && attempt >= dlbCap)

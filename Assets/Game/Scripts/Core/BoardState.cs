@@ -3,30 +3,29 @@ using System.Collections.Generic;
 
 namespace BallSortGame.Core
 {
-    /// <summary>Special tube rules. Stored per tube in levels ("tube_kinds"), designs and boards.</summary>
+    /// <summary>Per-tube rule. Saved in level JSON as "tube_kinds".</summary>
     public enum TubeKind : byte
     {
         Normal = 0,
-        /// <summary>Balls can be put in but never taken out (starts empty).</summary>
+        /// <summary>Balls go in but never come out. Starts empty.</summary>
         InOnly = 1,
-        /// <summary>Balls can be taken out but never put in (starts filled).</summary>
+        /// <summary>Balls come out but never go in. Starts filled.</summary>
         OutOnly = 2,
         /// <summary>
-        /// Little tube from the in-game booster: a parking spot for one ball of any colour. It never counts as a
-        /// finished tube, so a level is only won once it is empty again. Not used in level files.
+        /// The booster's little tube: holds one ball of any colour and never counts as finished, so the level is
+        /// won only once it is empty. Runtime only, never in level files.
         /// </summary>
         Spare = 3,
         /// <summary>
-        /// Covered tube (Art/Tubes/Hidden tube): its balls cannot be seen, taken or added to until a neighbouring tube
-        /// (index - 1 or + 1) is completed; then it opens for good and plays as a Normal tube. It may start empty or with balls.
+        /// Covered tube: its balls cannot be seen, taken or added to until a tube beside it in the same row is
+        /// completed. Then it opens for good as a Normal tube.
         /// </summary>
         Hidden = 4,
     }
 
     /// <summary>
-    /// Pure rule model of a ball-sort board (no Unity objects).
-    /// Mirrors BallSort.Solver.BoardState from the reference game:
-    /// tubes are byte stacks stored bottom-first, 0 = no ball, colors are 1..N.
+    /// Pure rule model of a board, no Unity objects. Tubes are byte stacks stored bottom-first,
+    /// 0 = no ball, colours 1..N.
     /// </summary>
     public sealed class BoardState
     {
@@ -36,16 +35,15 @@ namespace BallSortGame.Core
         readonly byte[][] _colors;   // [tube][slot] bottom-first
         readonly byte[] _counts;
         readonly TubeKind[] _kinds;
-        // Heavy balls (the cannonball obstacle): one bit per slot (bottom-first) of a normal coloured ball that is heavy.
-        // A heavy ball only ever moves alone into an empty tube (so it lands at the bottom), and a run moving off a tube
-        // stops at it. The level maker may put the weight on any ball; the rule only bites when the player moves it.
+        // Heavy balls, bit s = slot s. A heavy ball moves alone and only into an empty tube, and a run moving
+        // off a tube stops at it. Any ball may be heavy, the rule only matters when it moves.
         readonly uint[] _heavy;
+        // Hidden ("?") balls, bit s = slot s. A run stops at one because the player can't see that it matches.
+        // Only the game's dead-end check sets these, the generator and rater play with full sight.
+        readonly uint[] _unseen;
         public readonly int Capacity;
 
-        /// <summary>
-        /// Tubes per row on the board (GameManager.MaxTubesPerRow); decides which tubes stand side by side, see
-        /// <see cref="TubeRows"/>. A hidden tube opens only from a tube physically next to it.
-        /// </summary>
+        /// <summary>Must match the game's row width: a hidden tube opens only from a tube beside it in the same row.</summary>
         public int MaxTubesPerRow = TubeRows.DefaultMaxPerRow;
 
         public int TubeCount => _counts.Length;
@@ -58,35 +56,37 @@ namespace BallSortGame.Core
             _counts = new byte[tubeCount];
             _kinds = new TubeKind[tubeCount];
             _heavy = new uint[tubeCount];
+            _unseen = new uint[tubeCount];
             _colors = new byte[tubeCount][];
             for (int i = 0; i < tubeCount; i++) _colors[i] = new byte[capacity];
         }
 
         public TubeKind KindOf(int tube) => _kinds[tube];
 
-        /// <summary>The ball in <paramref name="slot"/> (0 = bottom) is heavy; false for an empty slot.</summary>
+        /// <summary>Slot 0 is the bottom. False for an empty slot.</summary>
         public bool IsHeavyAt(int tube, int slot) => slot >= 0 && slot < _counts[tube] && ((_heavy[tube] >> slot) & 1u) != 0;
 
-        /// <summary>The top ball of the tube is heavy: it moves alone, and only into an empty tube.</summary>
         public bool IsTopHeavy(int tube) => _counts[tube] > 0 && IsHeavyAt(tube, _counts[tube] - 1);
 
-        /// <summary>Heavy balls of the tube as a bit mask, bit s = slot s (bottom-first). The level JSON form.</summary>
+        /// <summary>Heavy balls as a bit mask, bit s = slot s. Same form as the level JSON.</summary>
         public int HeavyMask(int tube) => (int)_heavy[tube];
 
-        /// <summary>Marks one ball heavy (or normal again). Ignored for an empty slot.</summary>
-        public void SetHeavy(int tube, int slot, bool heavy)
+        /// <summary>Bits above the tube's balls are dropped.</summary>
+        public void SetHeavyMask(int tube, int mask) => _heavy[tube] = mask <= 0 ? 0u : (uint)mask & BallMask(tube);
+
+        /// <summary>Marks hidden ("?") balls, bit s = slot s. The top ball is always visible, so its bit is dropped.</summary>
+        public void SetUnseenMask(int tube, int mask)
         {
-            if (slot < 0 || slot >= _counts[tube]) return;
-            if (heavy) _heavy[tube] |= 1u << slot;
-            else _heavy[tube] &= ~(1u << slot);
+            uint m = mask <= 0 ? 0u : (uint)mask & BallMask(tube);
+            if (_counts[tube] > 0) m &= ~(1u << (_counts[tube] - 1));
+            _unseen[tube] = m;
         }
 
-        /// <summary>Sets the tube's heavy balls from a bit mask (bit s = slot s, bottom-first); bits above the balls are dropped.</summary>
-        public void SetHeavyMask(int tube, int mask) => _heavy[tube] = mask <= 0 ? 0u : (uint)mask & BallMask(tube);
+        bool IsUnseenAt(int tube, int slot) => ((_unseen[tube] >> slot) & 1u) != 0;
 
         uint BallMask(int tube) => _counts[tube] >= 32 ? uint.MaxValue : (1u << _counts[tube]) - 1u;
 
-        /// <summary>Applies per-tube heavy masks (null or short = no heavy ball in the rest). 1 = the bottom ball, the old form.</summary>
+        /// <summary>Per-tube heavy masks. Null or a short list = no heavy balls in the rest.</summary>
         public void SetHeavies(IList<int> heavy)
         {
             for (int i = 0; i < TubeCount; i++) SetHeavyMask(i, heavy != null && i < heavy.Count ? heavy[i] : 0);
@@ -97,7 +97,7 @@ namespace BallSortGame.Core
             get { for (int t = 0; t < TubeCount; t++) if (_heavy[t] != 0) return true; return false; }
         }
 
-        /// <summary>Heavy masks per tube (bit s = slot s, bottom-first), or null when no ball is heavy (the compact form for level JSON).</summary>
+        /// <summary>Heavy masks per tube, or null when no ball is heavy (compact level JSON).</summary>
         public List<int> HeavyOrNull()
         {
             if (!HasHeavyBalls) return null;
@@ -106,11 +106,11 @@ namespace BallSortGame.Core
             return l;
         }
 
-        /// <summary>Balls the tube holds: <see cref="Capacity"/>, or one for a <see cref="TubeKind.Spare"/> tube.</summary>
+        /// <summary>A Spare tube holds one ball.</summary>
         public int CapacityOf(int tube) => _kinds[tube] == TubeKind.Spare ? Math.Min(1, Capacity) : Capacity;
         public void SetKind(int tube, TubeKind kind) => _kinds[tube] = kind;
 
-        /// <summary>Applies per-tube kinds (null or short = Normal for the rest).</summary>
+        /// <summary>Null or a short list = Normal for the rest.</summary>
         public void SetKinds(IList<int> kinds)
         {
             for (int i = 0; i < TubeCount; i++) _kinds[i] = kinds != null && i < kinds.Count ? (TubeKind)kinds[i] : TubeKind.Normal;
@@ -121,7 +121,7 @@ namespace BallSortGame.Core
             get { foreach (var k in _kinds) if (k != TubeKind.Normal) return true; return false; }
         }
 
-        /// <summary>Kinds as ints, or null when every tube is Normal (the compact form for level JSON).</summary>
+        /// <summary>Kinds as ints, or null when every tube is Normal (compact level JSON).</summary>
         public List<int> KindsOrNull()
         {
             if (!HasSpecialTubes) return null;
@@ -130,17 +130,20 @@ namespace BallSortGame.Core
             return l;
         }
 
-        /// <summary>Empty and Normal: only such tubes are interchangeable for the solvers.</summary>
-        public bool IsPlainEmpty(int tube) => _counts[tube] == 0 && _kinds[tube] == TubeKind.Normal;
+        /// <summary>
+        /// Empty, Normal and not beside a hidden tube. Only such tubes are interchangeable for the solvers, since
+        /// completing a tube beside a hidden one opens it.
+        /// </summary>
+        public bool IsPlainEmpty(int tube) => _counts[tube] == 0 && _kinds[tube] == TubeKind.Normal && !HasHiddenNeighbour(tube);
 
-        /// <summary>True when a tube physically next to <paramref name="tube"/> (left or right, same row) is hidden.</summary>
+        /// <summary>Left or right in the same row only.</summary>
         public bool HasHiddenNeighbour(int tube)
         {
             int l = TubeRows.Left(tube, TubeCount, MaxTubesPerRow), r = TubeRows.Right(tube, TubeCount, MaxTubesPerRow);
             return (l >= 0 && _kinds[l] == TubeKind.Hidden) || (r >= 0 && _kinds[r] == TubeKind.Hidden);
         }
 
-        /// <summary>True when a tube physically next to <paramref name="tube"/> (left or right, same row) is completed.</summary>
+        /// <summary>Left or right in the same row only.</summary>
         public bool HasCompletedNeighbour(int tube)
         {
             int l = TubeRows.Left(tube, TubeCount, MaxTubesPerRow), r = TubeRows.Right(tube, TubeCount, MaxTubesPerRow);
@@ -148,9 +151,8 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
-        /// Opens every <see cref="TubeKind.Hidden"/> tube physically next to a completed tube (left or right in the same
-        /// row, see <see cref="TubeRows"/>; it becomes Normal). Chains: an opened tube that is already completed opens its
-        /// other neighbour too. Returns true when a tube opened.
+        /// Turns every hidden tube beside a completed tube into a Normal one. Repeats, because an opened tube
+        /// may already be completed and open the next. True when any tube opened.
         /// </summary>
         public bool OpenHiddenTubes()
         {
@@ -176,7 +178,7 @@ namespace BallSortGame.Core
             get { foreach (var k in _kinds) if (k == TubeKind.Hidden) return true; return false; }
         }
 
-        /// <summary>Builds a board from level data where each tube is listed TOP-first (0 = empty slot).</summary>
+        /// <summary>Builds a board from level data, each tube listed TOP-first (0 = empty slot).</summary>
         public static BoardState FromTopFirst(IList<IList<int>> tubesTopFirst, IList<int> kinds = null, IList<int> heavy = null)
         {
             int capacity = 0;
@@ -185,7 +187,7 @@ namespace BallSortGame.Core
             for (int i = 0; i < tubesTopFirst.Count; i++)
             {
                 var tube = tubesTopFirst[i];
-                // iterate from the bottom (last index) upwards
+                // bottom (last index) first
                 for (int j = tube.Count - 1; j >= 0; j--)
                 {
                     int c = tube[j];
@@ -207,6 +209,7 @@ namespace BallSortGame.Core
                 b._counts[i] = _counts[i];
                 b._kinds[i] = _kinds[i];
                 b._heavy[i] = _heavy[i];
+                b._unseen[i] = _unseen[i];
                 Buffer.BlockCopy(_colors[i], 0, b._colors[i], 0, Capacity);
             }
             return b;
@@ -214,17 +217,16 @@ namespace BallSortGame.Core
 
         public int Count(int tube) => _counts[tube];
         public bool IsEmpty(int tube) => _counts[tube] == 0;
-        public bool IsFull(int tube) => _counts[tube] >= CapacityOf(tube);
         public int FreeSlots(int tube) => CapacityOf(tube) - _counts[tube];
 
-        /// <summary>Color of slot i (0 = bottom). 0 when empty.</summary>
+        /// <summary>Slot 0 is the bottom. 0 when empty.</summary>
         public int ColorAt(int tube, int slot) => slot < _counts[tube] ? _colors[tube][slot] : 0;
 
         public int TopColor(int tube) => _counts[tube] == 0 ? 0 : _colors[tube][_counts[tube] - 1];
 
         /// <summary>
-        /// Length of the same-colored run at the top of the tube. A heavy ball on top is a run of one (it moves alone);
-        /// a heavy ball under the run ends it (it never leaves with the balls above it).
+        /// Length of the same-colour run on top. A heavy ball on top moves alone, and a heavy or hidden ball
+        /// below ends the run.
         /// </summary>
         public int TopRun(int tube)
         {
@@ -233,11 +235,11 @@ namespace BallSortGame.Core
             if (IsHeavyAt(tube, n - 1)) return 1;
             byte top = _colors[tube][n - 1];
             int run = 1;
-            for (int i = n - 2; i >= 0 && _colors[tube][i] == top && !IsHeavyAt(tube, i); i--) run++;
+            for (int i = n - 2; i >= 0 && _colors[tube][i] == top && !IsHeavyAt(tube, i) && !IsUnseenAt(tube, i); i--) run++;
             return run;
         }
 
-        /// <summary>True when every ball in the tube has the same color (empty counts as uniform).</summary>
+        /// <summary>Every ball the same colour. Empty counts.</summary>
         public bool IsUniform(int tube)
         {
             int n = _counts[tube];
@@ -247,14 +249,14 @@ namespace BallSortGame.Core
             return true;
         }
 
-        /// <summary>Reference rule IsTubeIdentical: empty, or full and one color. A spare tube only when empty.</summary>
+        /// <summary>Empty or completed. A spare tube only when empty.</summary>
         public bool IsTubeIdentical(int tube)
         {
             if (_counts[tube] == 0) return true;
             return IsCompleted(tube);
         }
 
-        /// <summary>Full and one color (a completed tube). A spare tube is never completed, nor is a tube still hidden.</summary>
+        /// <summary>Full and one colour. A spare or still-hidden tube never counts.</summary>
         public bool IsCompleted(int tube) => _kinds[tube] != TubeKind.Spare && _kinds[tube] != TubeKind.Hidden && _counts[tube] >= Capacity && IsUniform(tube);
 
         public bool IsWin()
@@ -263,14 +265,7 @@ namespace BallSortGame.Core
             return true;
         }
 
-        public int CompletedCount()
-        {
-            int c = 0;
-            for (int i = 0; i < TubeCount; i++) if (IsCompleted(i)) c++;
-            return c;
-        }
-
-        /// <summary>Can the top of <paramref name="from"/> be exported at all (reference CanExport + completed check).</summary>
+        /// <summary>Can the top of <paramref name="from"/> be picked up at all.</summary>
         public bool CanExport(int from, bool allowSelectFullTube = false)
         {
             if (_counts[from] == 0) return false;
@@ -279,10 +274,7 @@ namespace BallSortGame.Core
             return true;
         }
 
-        /// <summary>
-        /// Reference rule BoardState.CanImport(from, to). A heavy ball on top of its tube goes into an empty tube only,
-        /// so once moved it sits at the bottom.
-        /// </summary>
+        /// <summary>A heavy ball goes only into an empty tube, so it always lands at the bottom.</summary>
         public bool CanImport(int from, int to, bool allowSelectFullTube = false)
         {
             if (from == to) return false;
@@ -294,7 +286,7 @@ namespace BallSortGame.Core
             return TopColor(to) == TopColor(from);
         }
 
-        /// <summary>min(run length of the top color in from, free slots in to). The game always moves the whole run.</summary>
+        /// <summary>Top run capped by the free slots in <paramref name="to"/>. The game always moves the whole run.</summary>
         public int CountTopSameMovable(int from, int to) => Math.Min(TopRun(from), FreeSlots(to));
 
         public void ApplyMove(int from, int to, int n)
@@ -306,7 +298,8 @@ namespace BallSortGame.Core
                 Push(to, c);
                 if (heavy) _heavy[to] |= 1u << (_counts[to] - 1);
             }
-            // a completed tube opens the hidden tubes physically next to it
+            if (_counts[from] > 0) _unseen[from] &= ~(1u << (_counts[from] - 1));   // the new top ball shows its colour
+            // completing a tube opens the hidden tubes beside it
             if (IsCompleted(to) && HasHiddenNeighbour(to))
                 OpenHiddenTubes();
         }
@@ -322,11 +315,12 @@ namespace BallSortGame.Core
             if (_counts[tube] == 0) throw new InvalidOperationException("tube empty");
             byte c = _colors[tube][--_counts[tube]];
             _colors[tube][_counts[tube]] = 0;
-            _heavy[tube] &= ~(1u << _counts[tube]);   // the weight leaves with its ball (ApplyMove puts it on again)
+            _unseen[tube] &= ~(1u << _counts[tube]);
+            _heavy[tube] &= ~(1u << _counts[tube]);   // the weight leaves with its ball (ApplyMove puts it back)
             return c;
         }
 
-        /// <summary>Appends an empty tube (reference AddTube).</summary>
+        /// <summary>Copy with one empty tube added at the end (the Add Tube booster).</summary>
         public BoardState WithExtraTube()
         {
             var b = new BoardState(TubeCount + 1, Capacity) { MaxTubesPerRow = MaxTubesPerRow };
@@ -335,27 +329,15 @@ namespace BallSortGame.Core
                 b._counts[i] = _counts[i];
                 b._kinds[i] = _kinds[i];
                 b._heavy[i] = _heavy[i];
+                b._unseen[i] = _unseen[i];
                 Buffer.BlockCopy(_colors[i], 0, b._colors[i], 0, Capacity);
             }
             return b;
         }
 
-        /// <summary>Any legal move at all (quick dead-end check, independent of solvability).</summary>
-        public bool HasAnyMove()
-        {
-            for (int f = 0; f < TubeCount; f++)
-            {
-                if (!CanExport(f)) continue;
-                for (int t = 0; t < TubeCount; t++)
-                    if (CanImport(f, t)) return true;
-            }
-            return false;
-        }
-
         /// <summary>
-        /// Any move left that changes something (the reference's HasNoMove rule): a legal move that is not pouring a
-        /// single-colour tube into an empty tube of the same or greater height, which only relocates the balls. The game
-        /// fails a level only when this is false, however hopeless the board already is.
+        /// Any legal move that changes something. Pouring a one-colour tube into an empty tube at least as tall only
+        /// relocates it. The game fails a level only when this is false.
         /// </summary>
         public bool HasUsefulMove()
         {
@@ -370,9 +352,8 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
-        /// Any useful move (<see cref="HasUsefulMove"/>) that reaches a board not in <paramref name="seen"/> (hashes of
-        /// the boards played so far, <see cref="ComputeHash"/>). False when every move left only pours balls back and
-        /// forth between positions the player has already been in.
+        /// Any useful move that reaches a board not in <paramref name="seen"/> (hashes of the boards played so far).
+        /// False when every move left only goes back to an earlier position.
         /// </summary>
         public bool HasNewMove(HashSet<ulong> seen)
         {
@@ -398,8 +379,8 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
-        /// FNV-1a hash over the tube contents. Tubes are hashed in a canonical (sorted) order so that
-        /// boards that only differ by tube permutation collapse to one state.
+        /// FNV-1a hash of the board. Tubes are hashed in sorted order, so boards that differ only in tube order
+        /// count as one state.
         /// </summary>
         public ulong ComputeHash()
         {
@@ -408,6 +389,7 @@ namespace BallSortGame.Core
             {
                 ulong k = 1469598103934665603UL ^ ((ulong)_kinds[i] << 56);   // kind is part of the tube identity
                 k ^= (ulong)_heavy[i] << 40;                                      // and so are its heavy balls
+                k ^= (ulong)_unseen[i] << 20;                                     // and its hidden ("?") balls
                 for (int s = 0; s < Capacity; s++)
                 {
                     k ^= _colors[i][s];
@@ -415,8 +397,9 @@ namespace BallSortGame.Core
                 }
                 keys[i] = k;
             }
-            // insertion sort (TubeCount <= 24)
-            for (int i = 1; i < TubeCount; i++)
+            // insertion sort (TubeCount <= 24), skipped while a tube is hidden: order then decides which tube opens it
+            bool keepOrder = HasHiddenTubes;
+            for (int i = 1; i < TubeCount && !keepOrder; i++)
             {
                 ulong v = keys[i]; int j = i - 1;
                 while (j >= 0 && keys[j] > v) { keys[j + 1] = keys[j]; j--; }

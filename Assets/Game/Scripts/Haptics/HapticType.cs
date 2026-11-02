@@ -1,9 +1,6 @@
 namespace BallSortGame.Haptics
 {
-    /// <summary>
-    /// Game events that may vibrate. Mirrors Magic Sort's VibrationType (ButtonClick, BottleSelect, BottleFillStart,
-    /// BottleFillEnd, BottleDeselect, LevelWin, LevelLose, LevelStart, RewardSitToPosition) with bottles renamed to tubes.
-    /// </summary>
+    /// <summary>Game events that may vibrate.</summary>
     public enum HapticType
     {
         None = 0,
@@ -19,8 +16,7 @@ namespace BallSortGame.Haptics
     }
 
     /// <summary>
-    /// android.view.HapticFeedbackConstants, as Magic Sort's AndroidHapticFeedback enum lists them.
-    /// Constants newer than the device's API level are ignored by Android.
+    /// android.view.HapticFeedbackConstants. Android ignores constants newer than the device's API level.
     /// </summary>
     public enum AndroidHapticFeedback
     {

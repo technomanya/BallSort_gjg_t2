@@ -5,10 +5,8 @@ using UnityEngine.UI;
 namespace BallSortGame.Gameplay
 {
     /// <summary>
-    /// Background stars: every few seconds one rises from below the bottom edge to above the top edge, swaying,
-    /// turning and fading in and out. Bigger stars are brighter and faster, so the field has depth.
-    /// Under a Canvas the stars are Images spread over this RectTransform; anywhere else they are sprites spread
-    /// over the camera view, drawn between the background and the board.
+    /// Background stars that rise, sway, spin and fade. Bigger stars are brighter and faster to fake depth.
+    /// Under a Canvas they are Images, otherwise sprites over the camera view.
     /// </summary>
     public class RisingStars : MonoBehaviour
     {
@@ -28,14 +26,14 @@ namespace BallSortGame.Gameplay
         [Header("Timing")]
         [Tooltip("Seconds between two stars, random in this range.")]
         public Vector2 spawnInterval = new Vector2(2.5f, 5f);
-        [Tooltip("Seconds to cross the screen for the smallest (x) and the biggest (y) stars.")]
+        [Tooltip("Seconds to cross the screen, smallest (x) to biggest (y).")]
         public Vector2 riseSeconds = new Vector2(16f, 9f);
         public int maxStars = 6;
-        [Tooltip("Stars already on their way when the view opens, so it never starts empty.")]
+        [Tooltip("Stars already on screen when the view opens.")]
         public int prewarm = 2;
 
         [Header("Look")]
-        [Tooltip("Star height as a fraction of the view height, smallest to biggest.")]
+        [Tooltip("Star height as a fraction of view height.")]
         public Vector2 sizeRange = new Vector2(0.018f, 0.045f);
         [Tooltip("Opacity of the smallest (x) and the biggest (y) stars.")]
         public Vector2 alphaRange = new Vector2(0.25f, 0.75f);
@@ -44,7 +42,7 @@ namespace BallSortGame.Gameplay
         public float sway = 0.025f;
         [Tooltip("Highest turn speed in degrees per second.")]
         public float spin = 30f;
-        [Tooltip("Part of the trip spent fading in at the bottom and out at the top.")]
+        [Tooltip("Part of the trip spent fading in and out.")]
         [Range(0f, 0.5f)] public float fade = 0.2f;
 
         [Header("World mode (no Canvas)")]
@@ -101,7 +99,7 @@ namespace BallSortGame.Gameplay
             }
         }
 
-        /// <summary>The view the stars cross: the RectTransform's rect (UI) or the camera view in world units.</summary>
+        // The RectTransform's rect (UI) or the camera view in world units.
         bool TryGetArea(out Rect area)
         {
             if (_ui)
@@ -146,7 +144,7 @@ namespace BallSortGame.Gameplay
             }
         }
 
-        /// <summary>Starts a star at height <paramref name="y"/> (0 = bottom edge, 1 = top edge), or just below the bottom when null.</summary>
+        // y: 0 = bottom edge, 1 = top edge, null = just below the bottom.
         void Spawn(float? y)
         {
             if (sprites == null || sprites.Length == 0) return;
@@ -154,7 +152,7 @@ namespace BallSortGame.Gameplay
             var sprite = sprites[Random.Range(0, sprites.Length)];
             if (_ui) s.Img.sprite = sprite; else s.Sr.sprite = sprite;
 
-            float depth = Random.value;   // 0 = small, dim and slow; 1 = big, bright and fast
+            float depth = Random.value;   // 0 = small, dim, slow. 1 = big, bright, fast.
             s.Size = Mathf.Lerp(sizeRange.x, sizeRange.y, depth);
             s.Alpha = Mathf.Lerp(alphaRange.x, alphaRange.y, depth);
             s.Speed = (s.EndY - s.StartY) / Mathf.Max(0.1f, Mathf.Lerp(riseSeconds.x, riseSeconds.y, depth));

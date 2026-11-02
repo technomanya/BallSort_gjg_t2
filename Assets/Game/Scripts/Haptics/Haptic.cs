@@ -5,11 +5,8 @@ using UnityEngine;
 namespace BallSortGame.Haptics
 {
     /// <summary>
-    /// Entry point: <c>Haptic.Play(HapticType)</c>. Mirrors Magic Sort's VibrationService + FeedbackRunner:
-    /// a play request is dropped when the device cannot vibrate or the settings toggle is off; otherwise the event's
-    /// pattern is queued and a LateUpdate runner steps through it in milliseconds of frame time, firing one platform
-    /// haptic per step. Running patterns are kept sorted by priority (highest first), so when several start in one
-    /// frame the important one fires first. The settings toggle is <see cref="SettingsView.Haptic"/>.
+    /// Entry point: Haptic.Play(type). Queues the event's pattern and a LateUpdate runner fires its steps on time.
+    /// Patterns are sorted by priority so the important one fires first when several start in one frame.
     /// </summary>
     public static class Haptic
     {
@@ -18,7 +15,7 @@ namespace BallSortGame.Haptics
         static AndroidHaptics _android;
         static bool? _supported;
 
-        /// <summary>Editor / desktop: log each step instead of vibrating (there is nothing to vibrate).</summary>
+        /// <summary>Editor only: log each step instead of vibrating.</summary>
         public static bool LogInEditor = false;
 
         public static HapticsConfig Config
@@ -32,7 +29,7 @@ namespace BallSortGame.Haptics
             set { _config = value; }
         }
 
-        /// <summary>True when this device can play haptics at all (Android 8+ with a vibrator, or iOS).</summary>
+        /// <summary>Android 8+ with a vibrator, or iOS.</summary>
         public static bool IsSupported
         {
             get
@@ -52,10 +49,9 @@ namespace BallSortGame.Haptics
             }
         }
 
-        /// <summary>The user's haptics toggle (settings page).</summary>
+        /// <summary>The settings page toggle.</summary>
         public static bool IsEnabled => SettingsView.Haptic;
 
-        /// <summary>Queues the pattern for <paramref name="type"/>; nothing happens when unsupported, off, or the pattern is empty.</summary>
         public static void Play(HapticType type)
         {
             if (type == HapticType.None || !IsSupported || !IsEnabled) return;
@@ -96,7 +92,7 @@ namespace BallSortGame.Haptics
 #endif
         }
 
-        /// <summary>A pattern in flight (reference Feedback): elapsed ms, total ms, which steps already fired.</summary>
+        // A pattern in flight: elapsed ms, total ms, which steps already fired.
         sealed class Feedback
         {
             public HapticsConfig.Pattern Pattern;
@@ -114,7 +110,7 @@ namespace BallSortGame.Haptics
             }
         }
 
-        /// <summary>Reference FeedbackRunner: advances patterns by frame time and fires the steps that came due.</summary>
+        // Advances patterns by frame time and fires the steps that came due.
         sealed class Runner : MonoBehaviour
         {
             readonly List<Feedback> _running = new List<Feedback>();

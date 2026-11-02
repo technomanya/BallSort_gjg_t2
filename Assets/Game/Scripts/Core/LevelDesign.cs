@@ -4,32 +4,31 @@ using System.Text;
 
 namespace BallSortGame.Core
 {
-    /// <summary>How a tube of a design is filled, mirroring the editor presets of the Magic Sort pipeline.</summary>
+    /// <summary>How a design tube is filled.</summary>
     public enum TubePreset
     {
         /// <summary>Every slot is fixed by the designer.</summary>
         Deterministic = 1,
-        /// <summary>Every slot is filled at random.</summary>
+        /// <summary>Every slot is random.</summary>
         Luck = 2,
-        /// <summary>Some slots fixed, the rest random (0 in <see cref="TubeSpec.Fixed"/> marks a random slot).</summary>
+        /// <summary>Some slots fixed, the rest random (0 in <see cref="TubeSpec.Fixed"/> = random).</summary>
         PartialLuck = 3,
-        /// <summary>Starts empty.</summary>
         Empty = 4,
     }
 
-    /// <summary>One tube of a design. <see cref="Fixed"/> is bottom-first; 0 = slot filled by the random fill.</summary>
+    /// <summary>One tube of a design.</summary>
     [Serializable]
     public sealed class TubeSpec
     {
         public TubePreset Preset = TubePreset.Luck;
-        /// <summary>Normal, InOnly (must start empty) or OutOnly (must start with balls).</summary>
+        /// <summary>InOnly tubes must start empty, OutOnly tubes with balls.</summary>
         public TubeKind Kind = TubeKind.Normal;
         public int Capacity = 4;
-        /// <summary>Bottom-first colours for Deterministic / PartialLuck tubes; 0 = luck slot. Null or shorter than Capacity = remaining slots are luck slots.</summary>
+        /// <summary>Bottom-first colours for Deterministic / PartialLuck tubes. 0 or past the end = random slot.</summary>
         public int[] Fixed;
-        /// <summary>Heavy balls (the cannonball obstacle) as a bit mask, bit s = the s-th ball from the bottom: each only ever moves alone into an empty tube. Every bit needs a ball.</summary>
+        /// <summary>Heavy balls, bit s = the s-th ball from the bottom. Every bit needs a ball.</summary>
         public int HeavyMask;
-        /// <summary>Slots this tube has balls in. Luck/Partial tubes are full unless <see cref="FillCount"/> says otherwise.</summary>
+        /// <summary>Balls the tube starts with. -1 = full.</summary>
         public int FillCount = -1;
 
         public int EffectiveFillCount => Preset == TubePreset.Empty ? 0 : (FillCount < 0 ? Capacity : Math.Min(FillCount, Capacity));
@@ -38,21 +37,11 @@ namespace BallSortGame.Core
 
         public static TubeSpec Luck(int capacity = 4) => new TubeSpec { Preset = TubePreset.Luck, Capacity = capacity };
         public static TubeSpec Empty(int capacity = 4) => new TubeSpec { Preset = TubePreset.Empty, Capacity = capacity };
-        /// <summary>Empty tube that only accepts balls.</summary>
-        public static TubeSpec InOnly(int capacity = 4) => new TubeSpec { Preset = TubePreset.Empty, Capacity = capacity, Kind = TubeKind.InOnly };
-        /// <summary>Full luck tube that only gives balls away.</summary>
-        public static TubeSpec OutOnly(int capacity = 4) => new TubeSpec { Preset = TubePreset.Luck, Capacity = capacity, Kind = TubeKind.OutOnly };
-        /// <summary>Covered luck tube that opens when a neighbouring tube is completed.</summary>
-        public static TubeSpec Hidden(int capacity = 4) => new TubeSpec { Preset = TubePreset.Luck, Capacity = capacity, Kind = TubeKind.Hidden };
-        public static TubeSpec Deterministic(int capacity, params int[] bottomFirst) =>
-            new TubeSpec { Preset = TubePreset.Deterministic, Capacity = capacity, Fixed = bottomFirst, FillCount = bottomFirst.Length };
-        public static TubeSpec Partial(int capacity, params int[] bottomFirstWithZeros) =>
-            new TubeSpec { Preset = TubePreset.PartialLuck, Capacity = capacity, Fixed = bottomFirstWithZeros };
     }
 
     /// <summary>
-    /// A level design: the part of a level the designer fixes (tube count, capacity, colour count, empties,
-    /// hand-placed colours). The random fill of the luck slots produces the concrete "seeds" of the design.
+    /// The part of a level the designer fixes: tubes, capacity, colour count, empties and hand-placed colours.
+    /// Random fills of the luck slots turn it into concrete seeds.
     /// </summary>
     [Serializable]
     public sealed class LevelDesign
@@ -65,14 +54,13 @@ namespace BallSortGame.Core
         public int Capacity { get { int c = 0; foreach (var t in Tubes) c = Math.Max(c, t.Capacity); return c; } }
         public int EmptyTubeCount { get { int n = 0; foreach (var t in Tubes) if (t.EffectiveFillCount == 0) n++; return n; } }
 
-        /// <summary>Standard design: <paramref name="colors"/> full luck tubes plus <paramref name="empties"/> empty tubes.</summary>
+        /// <summary><paramref name="colors"/> full luck tubes plus <paramref name="empties"/> empty tubes.</summary>
         public static LevelDesign Standard(string name, int colors, int empties, int capacity = 4)
             => Standard(name, colors, empties, capacity, empties);
 
         /// <summary>
-        /// Standard design with <paramref name="spareTubes"/> tubes beyond the colour count, of which
-        /// <paramref name="empties"/> start empty; the free slots of the other spare tubes are spread over the
-        /// filled tubes as partial fills (Magic Sort boards mostly have 2 spare tubes but only 1-2 empty ones).
+        /// <paramref name="spareTubes"/> tubes beyond the colour count, of which <paramref name="empties"/> start
+        /// empty. The free slots of the other spare tubes are spread over the filled tubes.
         /// </summary>
         public static LevelDesign Standard(string name, int colors, int empties, int capacity, int spareTubes)
         {
@@ -93,10 +81,8 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
-        /// Covers up to <paramref name="count"/> filled tubes (<see cref="TubeKind.Hidden"/>), picked at random from
-        /// <paramref name="seed"/>: never two side by side in the same row (<see cref="TubeRows"/>), so every hidden tube
-        /// has a physical neighbour that can open it.
-        /// Returns how many tubes were covered.
+        /// Covers up to <paramref name="count"/> random filled tubes, never two side by side, so every hidden tube
+        /// has a neighbour that can open it. Returns how many were covered.
         /// </summary>
         public int HideTubes(int count, int seed)
         {
@@ -123,7 +109,7 @@ namespace BallSortGame.Core
             return hidden;
         }
 
-        /// <summary>Number of balls of each colour the fill must place (colour index 1..ColorCount), after the fixed slots.</summary>
+        /// <summary>Balls of each colour (index 1..ColorCount) left for the random fill after the fixed slots. Null on error.</summary>
         public int[] RemainingUnits(out int luckSlots, out string error)
         {
             error = null;
@@ -173,9 +159,8 @@ namespace BallSortGame.Core
     }
 
     /// <summary>
-    /// Target board size per level index, taken from the Magic Sort default level order
-    /// (levels 1-10: 6 tubes / 4 colours; 11-160: 9-11 tubes / 7-9 colours; 161+: 12-14 tubes / 10-11 colours;
-    /// 1-2 empty tubes; every level ending in 4 is hard, ending in 9 super-hard).
+    /// Target board size and difficulty per level. Boards grow from 1 colour to 11 over the first ~200 levels,
+    /// with 1-2 empty tubes. Levels ending in 4 are hard, in 9 super-hard.
     /// </summary>
     public static class ProgressionCurve
     {
@@ -188,12 +173,11 @@ namespace BallSortGame.Core
             public int Capacity;
             public bool IsHard;
             public bool IsSuperHard;
-            /// <summary>Wanted bot-style difficulty bucket (1..7).</summary>
+            /// <summary>Wanted difficulty bucket (1..7).</summary>
             public int TargetBucket;
-            public bool IsTutorial;
         }
 
-        /// <summary>Magic Sort: first hard level is 14, first super-hard 19; tiny early boards cannot be made hard.</summary>
+        /// <summary>Tiny early boards cannot be made hard, so the first hard level is 14 and the first super-hard 19.</summary>
         public static bool IsHardLevel(int level) => level >= 14 && level % 10 == 4;
         public static bool IsSuperHardLevel(int level) => level >= 19 && level % 10 == 9;
 
@@ -215,10 +199,10 @@ namespace BallSortGame.Core
         {
             if (level <= 1) return 1;
             if (level <= 20) return 2;
-            return level % 10 == 1 || level % 10 == 6 ? 1 : 2;     // Magic Sort averages ~1.6 empties per level
+            return level % 10 == 1 || level % 10 == 6 ? 1 : 2;     // about 1.6 empties per level on average
         }
 
-        /// <summary>Tubes beyond the colour count (Magic Sort: 2 for most levels, 3 for about a third of the late ones).</summary>
+        /// <summary>Tubes beyond the colour count: 2, or 3 for about a third of the late levels.</summary>
         public static int SpareTubesFor(int level)
         {
             if (level <= 20) return 2;
@@ -226,7 +210,7 @@ namespace BallSortGame.Core
             return 2;
         }
 
-        /// <summary>Mean bot difficulty of the shipped Magic Sort levels, rounded: 1 (1-20), 1-2 (21-90), 2-3 (91-160), 3 (161+); hard 4, super-hard 5.</summary>
+        /// <summary>1 (levels 1-20), 1-2 (21-90), 2-3 (91-130), 3-4 after. Hard 4, super-hard 5.</summary>
         public static int TargetBucketFor(int level)
         {
             if (IsSuperHardLevel(level)) return 5;
@@ -251,14 +235,8 @@ namespace BallSortGame.Core
                 IsHard = IsHardLevel(level),
                 IsSuperHard = IsSuperHardLevel(level),
                 TargetBucket = TargetBucketFor(level),
-                IsTutorial = level <= 4,
             };
         }
 
-        public static LevelDesign DesignFor(int level, int capacity = 4)
-        {
-            var s = For(level, capacity);
-            return LevelDesign.Standard($"lvl{level}", s.Colors, s.Empties, capacity, s.SpareTubes);
-        }
     }
 }

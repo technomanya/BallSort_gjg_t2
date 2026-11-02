@@ -11,11 +11,8 @@ using UnityEngine;
 namespace BallSortGame.EditorTools
 {
     /// <summary>
-    /// Offline level pipeline, modelled on Magic Sort's: a design (tube count, colours, empties, optional fixed
-    /// colours) is random-filled many times, every fill is rated by the solver-based <see cref="LevelRater"/>,
-    /// and the fills whose difficulty bucket matches the progression target become the seeds of the level.
-    /// Writes a StageData JSON under Resources/data (each level carries its extra seeds in "variants").
-    /// Menu: BallSort > Level Pack Generator.
+    /// Fills each level design many times, rates every fill with <see cref="LevelRater"/> and keeps the fills that hit
+    /// the target difficulty as the level's seeds. Writes a StageData JSON under Resources/data.
     /// </summary>
     public sealed class LevelPackGeneratorWindow : EditorWindow
     {
@@ -59,14 +56,14 @@ namespace BallSortGame.EditorTools
             _toLevel = EditorGUILayout.IntField("To level", _toLevel);
             _seedsPerLevel = EditorGUILayout.IntSlider("Seeds per level", _seedsPerLevel, 1, 10);
             _capacity = EditorGUILayout.IntSlider("Tube capacity", _capacity, 2, BoardState.MaxDepth);
-            _useCurve = EditorGUILayout.Toggle(new GUIContent("Use progression curve", "Board size and target difficulty per level index, taken from Magic Sort's default level order."), _useCurve);
+            _useCurve = EditorGUILayout.Toggle(new GUIContent("Use progression curve", "Board size and target difficulty per level."), _useCurve);
             if (!_useCurve)
             {
                 _fixedColors = EditorGUILayout.IntSlider("Colours", _fixedColors, 1, 16);
                 _fixedEmpties = EditorGUILayout.IntSlider("Empty tubes", _fixedEmpties, 0, 4);
                 _fixedBucket = EditorGUILayout.IntSlider("Target difficulty (1-7)", _fixedBucket, 1, 7);
             }
-            _hardCadence = EditorGUILayout.Toggle(new GUIContent("Hard x4 / super-hard x9", "Levels ending in 4 target bucket 4, ending in 9 bucket 5 (Magic Sort cadence)."), _hardCadence);
+            _hardCadence = EditorGUILayout.Toggle(new GUIContent("Hard x4 / super-hard x9", "Levels ending in 4 target bucket 4, ending in 9 bucket 5."), _hardCadence);
             _dlbForHard = EditorGUILayout.Toggle(new GUIContent("Easier dlb seeds for hard levels", "Adds easier fills that take over after the cap of failed attempts."), _dlbForHard);
             if (_dlbForHard) _dlbCap = EditorGUILayout.IntSlider("dlb cap (failed attempts)", _dlbCap, 1, 10);
             _tolerance = EditorGUILayout.IntSlider(new GUIContent("Bucket tolerance", "Accept fills this many buckets away from the target."), _tolerance, 0, 2);
@@ -109,7 +106,7 @@ namespace BallSortGame.EditorTools
             Debug.Log(_log);
         }
 
-        /// <summary>All generator inputs; scriptable from code (e.g. <c>unity command script eval</c>) via <see cref="GeneratePack"/>.</summary>
+        /// <summary>Generator inputs, so <see cref="GeneratePack"/> can also be run from a script.</summary>
         public sealed class PackSettings
         {
             public int FromLevel = 1, ToLevel = 50, SeedsPerLevel = 5, Capacity = 4;
@@ -118,13 +115,13 @@ namespace BallSortGame.EditorTools
             public bool HardCadence = true, DlbForHard = true;
             public int DlbCap = 2, Tolerance = 0, MaxFills = 150;
             public bool FastBudget = true;
-            /// <summary>Filled tubes covered per level (<see cref="TubeKind.Hidden"/>) on levels HiddenFromLevel, + HiddenEvery, ...</summary>
+            /// <summary>Hidden tubes per level, from HiddenFromLevel on, every HiddenEvery levels.</summary>
             public int HiddenTubes = 0, HiddenFromLevel = 10, HiddenEvery = 1;
             public int BaseSeed = 1;
             public string OutputName = "gen_1_50";
         }
 
-        /// <summary>Generates the pack and writes Assets/Game/Resources/data/&lt;OutputName&gt;.json. Returns the log.</summary>
+        /// <summary>Writes Resources/data/OutputName.json and returns the log.</summary>
         public static string GeneratePack(PackSettings s, bool showProgress = false)
         {
             var sb = new StringBuilder();

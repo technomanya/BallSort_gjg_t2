@@ -3,13 +3,9 @@ using UnityEngine;
 namespace BallSortGame.UI
 {
     /// <summary>
-    /// Keeps a UI element out of the phone's cutout, status bar and gesture bar (<see cref="Screen.safeArea"/>; the app
-    /// renders behind them, see Android "Render outside safe area"). Two uses, picked from the element's anchors:
-    /// a rect stretched over the screen height (anchor y 0..1, e.g. a full-screen panel) gets the insets as padding,
-    /// so everything inside moves in; any other element is shifted down by the top inset when it hangs from the top
-    /// edge (anchor y = 1) or up by the bottom inset when it stands on the bottom edge (anchor y = 0). Insets are in the
-    /// canvas' units, so they match the <see cref="UnityEngine.UI.CanvasScaler"/>. Re-applied when the safe area or the
-    /// screen size changes (rotation, split screen, foldables). Attach with <see cref="Attach"/>.
+    /// Keeps a UI element out of the cutout, status bar and gesture bar, since the app renders behind them.
+    /// A rect stretched over the screen height gets the insets as padding. A rect anchored to the top or bottom edge
+    /// is shifted by that edge's inset.
     /// </summary>
     public class SafeAreaFitter : MonoBehaviour
     {
@@ -19,8 +15,9 @@ namespace BallSortGame.UI
         bool _captured;
         Rect _lastSafe;
         Vector2Int _lastScreen;
+        float _lastScale;
 
-        /// <summary>Adds the fitter to <paramref name="target"/> (once) and applies the current safe area.</summary>
+        /// <summary>Adds the fitter once and applies the current safe area.</summary>
         public static SafeAreaFitter Attach(Component target)
         {
             if (target == null) return null;
@@ -34,7 +31,9 @@ namespace BallSortGame.UI
 
         void Update()
         {
-            if (Screen.safeArea != _lastSafe || Screen.width != _lastScreen.x || Screen.height != _lastScreen.y) Apply();
+            // the canvas scale can change a frame after the screen size, so watch it too
+            float scale = _canvas != null ? _canvas.scaleFactor : 1f;
+            if (Screen.safeArea != _lastSafe || Screen.width != _lastScreen.x || Screen.height != _lastScreen.y || !Mathf.Approximately(scale, _lastScale)) Apply();
         }
 
         void Apply()
@@ -52,7 +51,8 @@ namespace BallSortGame.UI
             _lastSafe = Screen.safeArea;
             _lastScreen = new Vector2Int(Screen.width, Screen.height);
 
-            float scale = _canvas != null && _canvas.scaleFactor > 0f ? _canvas.scaleFactor : 1f;
+            _lastScale = _canvas != null ? _canvas.scaleFactor : 1f;
+            float scale = _lastScale > 0f ? _lastScale : 1f;
             float top = Mathf.Max(0f, Screen.height - _lastSafe.yMax) / scale;
             float bottom = Mathf.Max(0f, _lastSafe.yMin) / scale;
 

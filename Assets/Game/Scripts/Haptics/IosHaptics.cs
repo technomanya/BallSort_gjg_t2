@@ -3,9 +3,8 @@ using System.Runtime.InteropServices;
 namespace BallSortGame.Haptics
 {
     /// <summary>
-    /// iOS bridge to Plugins/iOS/BallSortHaptics.mm (UIKit feedback generators). Magic Sort's iOS pattern assets carry
-    /// only delays and priority (the Android APK has no iOS code), so each step plays one generator picked from the
-    /// Android constant of that step.
+    /// iOS bridge to Plugins/iOS/BallSortHaptics.mm. Each step plays the UIKit feedback generator that matches its
+    /// Android constant.
     /// </summary>
     public static class IosHaptics
     {

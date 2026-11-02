@@ -6,8 +6,8 @@ using UnityEngine.UI;
 namespace BallSortGame.LevelEditor
 {
     /// <summary>
-    /// Small uGUI kit for the in-app level editor. Everything is built at runtime with procedural sprites, so the
-    /// editor needs no prefabs, scene objects or Resources and ships inside the normal game build.
+    /// Small uGUI kit for UI built in code at runtime. Procedural sprites stand in when the game skin lacks one,
+    /// so it needs no prefabs or scene objects.
     /// </summary>
     public static class EditorUI
     {
@@ -27,18 +27,18 @@ namespace BallSortGame.LevelEditor
         public static Sprite Circle => _circle != null ? _circle : (_circle = MakeRounded(128, 64, 0));
         public static Sprite RoundRect => _roundRect != null ? _roundRect : (_roundRect = MakeRounded(64, 18, 22));
 
-        // ------------------------------------------------------------------ game skin (Resources/UISkin), procedural fallbacks
+        // --- game skin sprites, with procedural fallbacks
 
         public static UISkin Skin => UISkin.Current;
         static Sprite Pick(Sprite skinSprite, Sprite fallback) => skinSprite != null ? skinSprite : fallback;
-        /// <summary>Dark pill panel of the HUD (booster bar, popups).</summary>
+        /// <summary>Dark HUD pill panel (booster bar, popups).</summary>
         public static Sprite PillSprite => Pick(Skin?.pill, RoundRect);
         public static Sprite SquareSprite => Pick(Skin?.buttonSquare, RoundRect);
         public static Sprite RectSprite => Pick(Skin?.buttonRect, RoundRect);
         public static Sprite GreenSprite => Pick(Skin?.buttonRectGreen, RoundRect);
         public static Sprite CircleSprite => Pick(Skin?.buttonCircle, Circle);
         public static Sprite FrameSprite => Pick(Skin?.squareFrame, RoundRect);
-        /// <summary>White when the skin draws the colours itself, the given tint otherwise.</summary>
+        /// <summary>White when the skin sprite has its own colours, else the fallback tint.</summary>
         public static Color Tint(Sprite skinSprite, Color fallback) => skinSprite != null ? Color.white : fallback;
 
         /// <summary>Drop shadow like the HUD texts.</summary>
@@ -59,7 +59,7 @@ namespace BallSortGame.LevelEditor
             return c;
         }
 
-        /// <summary>Square HUD-style button with an icon (or a text when the icon is missing).</summary>
+        /// <summary>Square HUD-style button with an icon, or a text when the icon is missing.</summary>
         public static Button IconButton(Transform parent, string name, Sprite icon, string fallbackText, UnityAction onClick, float size = 110f)
         {
             var img = Image(name, parent, SquareSprite, Tint(Skin?.buttonSquare, ButtonColor), true);
@@ -82,7 +82,7 @@ namespace BallSortGame.LevelEditor
             return b;
         }
 
-        /// <summary>Rounded HUD-style text button; <paramref name="green"/> uses the green rectangle.</summary>
+        /// <summary>Rounded HUD-style text button, green or plain.</summary>
         public static Button PillButton(Transform parent, string label, bool green, UnityAction onClick, float width, int fontSize = 40)
         {
             var sprite = green ? GreenSprite : RectSprite;
@@ -100,7 +100,7 @@ namespace BallSortGame.LevelEditor
             return b;
         }
 
-        /// <summary>"CAPTION (-) value (+)" in a dark pill with round buttons. Returns the value text.</summary>
+        /// <summary>"CAPTION (-) value (+)" in a dark pill. Returns the value text.</summary>
         public static Text SkinStepper(Transform parent, string caption, UnityAction<int> onDelta, float width)
         {
             var box = Image(caption, parent, PillSprite, Tint(Skin?.pill, Bar), true);
@@ -129,7 +129,7 @@ namespace BallSortGame.LevelEditor
             return b;
         }
 
-        /// <summary>Anti-aliased white rounded square; radius = size/2 gives a circle. border > 0 makes it 9-sliced.</summary>
+        /// <summary>Anti-aliased white rounded square. radius = size/2 gives a circle, border > 0 makes it 9-sliced.</summary>
         static Sprite MakeRounded(int size, float radius, int border)
         {
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
@@ -150,7 +150,7 @@ namespace BallSortGame.LevelEditor
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(border, border, border, border));
         }
 
-        // ------------------------------------------------------------------ rects
+        // --- rects
 
         public static RectTransform Rect(string name, Transform parent)
         {
@@ -212,7 +212,7 @@ namespace BallSortGame.LevelEditor
             return c;
         }
 
-        // ------------------------------------------------------------------ widgets
+        // --- widgets
 
         public static Image Image(string name, Transform parent, Sprite sprite, Color color, bool sliced = false)
         {
@@ -265,29 +265,6 @@ namespace BallSortGame.LevelEditor
             return b;
         }
 
-        public static void SetLabel(Button b, string label)
-        {
-            var t = b.GetComponentInChildren<Text>();
-            if (t != null) t.text = label;
-        }
-
-        /// <summary>"Caption  [-] value [+]" in a row. Returns the value text.</summary>
-        public static Text Stepper(Transform parent, string caption, UnityAction<int> onDelta, float flex = 1f)
-        {
-            var box = Image(caption, parent, RoundRect, Bar, true);
-            Flex(box, flex);
-            var row = RowLayout(box.gameObject, 6f);
-            row.padding = new RectOffset(6, 6, 6, 6);
-
-            var cap = Flex(Rect("caption", box.transform), 1.3f);
-            Label(cap, caption, 32, TextAnchor.MiddleCenter, Muted);
-            Button(box.transform, "-", ButtonColor, () => onDelta(-1), 52, 0.9f);
-            var val = Flex(Rect("value", box.transform), 0.9f);
-            var text = Label(val, "", 44, TextAnchor.MiddleCenter, Color.white);
-            Button(box.transform, "+", ButtonColor, () => onDelta(+1), 52, 0.9f);
-            return text;
-        }
-
         public static InputField Input(Transform parent, string placeholder, UnityAction<string> onEndEdit, float flex = 1f)
         {
             var bg = Image("input", parent, RoundRect, Bar, true);
@@ -307,7 +284,7 @@ namespace BallSortGame.LevelEditor
             return field;
         }
 
-        /// <summary>Vertical scroll list filling <paramref name="parent"/>; returns the content to add rows to.</summary>
+        /// <summary>Vertical scroll list filling the parent. Returns the content to add rows to.</summary>
         public static RectTransform ScrollList(Transform parent, Vector2 offsetMin, Vector2 offsetMax)
         {
             var view = Stretch(Rect("scroll", parent), offsetMin, offsetMax);

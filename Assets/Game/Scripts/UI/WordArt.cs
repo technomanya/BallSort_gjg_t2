@@ -4,14 +4,12 @@ using UnityEngine.UI;
 namespace BallSortGame.UI
 {
     /// <summary>
-    /// Picture lettering. Art/Fonts holds the mockup's words as 1x PNG exports (there is no font file), so a label
-    /// whose word exists as a picture shows that picture and keeps its Text, switched off, as the fallback. The
-    /// pictures are drawn at mockup pixels x <see cref="MockupScale"/>, like every other size of the 1080x2340 layout.
-    /// Numbers are drawn by <see cref="WordLabel"/> from the digit pictures of the skin.
+    /// Picture lettering. Art/Fonts holds words as PNGs (there is no font file), so a label whose word exists as a
+    /// picture shows it and keeps its Text, switched off, as the fallback.
     /// </summary>
     public static class WordArt
     {
-        /// <summary>Mockup pixel to canvas unit (the mockups are 668 px wide, the canvas 1080).</summary>
+        /// <summary>Art pixel to canvas unit (the art is 668 px wide, the canvas 1080).</summary>
         public const float MockupScale = 1080f / 668f;
         public const string PictureName = "word";
 
@@ -19,9 +17,8 @@ namespace BallSortGame.UI
         public static Vector2 Size(Sprite s) => s != null ? s.rect.size * MockupScale : Vector2.zero;
 
         /// <summary>
-        /// Shows <paramref name="word"/> in place of <paramref name="text"/>: a "word" Image child centred on the text's
-        /// rect, the Text component switched off. With a null sprite the text stays as it is. Safe to call again: the
-        /// existing picture is reused. Returns the picture, or null.
+        /// Shows the word picture over the text and switches the Text off. A null sprite keeps the text. Safe to call
+        /// again. Returns the picture, or null.
         /// </summary>
         public static Image Picture(Text text, Sprite word)
         {
@@ -67,8 +64,7 @@ namespace BallSortGame.UI
         static Font _builtin;
 
         /// <summary>
-        /// Font style to use for <paramref name="wanted"/>: the skin font is a display face with no bold cut (Unity
-        /// would fake it and clog the counters), so Bold becomes Normal and BoldAndItalic becomes Italic while it is set.
+        /// Drops Bold while the skin font is set. It has no bold cut and Unity's fake bold clogs the letters.
         /// </summary>
         public static FontStyle Style(FontStyle wanted)
         {

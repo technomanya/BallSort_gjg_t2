@@ -1,42 +1,37 @@
 using System;
 using System.Collections;
-using BallSortGame.Core;
 using UnityEngine;
 
 namespace BallSortGame.Gameplay
 {
-    /// <summary>A single ball. Mirrors BallSort.BallData: a color index, a sprite, select-rise and path-based movement.</summary>
+    /// <summary>A single ball: a colour index, a sprite, and the select and move animations.</summary>
     [RequireComponent(typeof(SpriteRenderer))]
     public class Ball : MonoBehaviour
     {
         [Header("Motion feel")]
-        [Tooltip("Arc bulge used when there is little room above the tubes, in world units.")]
+        [Tooltip("Arc bulge when there is little room above the tubes.")]
         public float ArcHeight = 0.55f;
-        [Tooltip("With at least this much free space above the lifted ball the flight becomes a half ellipse.")]
+        [Tooltip("Free space above needed to fly a half ellipse.")]
         public float MinEllipseHeadroom = 0.6f;
-        [Tooltip("Ellipse height = min(headroom, EllipseHeightBase + distance * EllipseHeightPerUnit).")]
+        [Tooltip("Ellipse height = base + distance * per unit.")]
         public float EllipseHeightBase = 0.6f;
         public float EllipseHeightPerUnit = 0.22f;
-        [Tooltip("Height of the little hop after the ball lands in its slot.")]
+        [Tooltip("Height of the hop after landing.")]
         public float BounceHeight = 0.2f;
         public float BounceDuration = 0.16f;
 
         public int ColorIndex { get; private set; }
         /// <summary>
-        /// Heavy ball (the cannonball obstacle): a normal coloured ball with a weight drawn on it. It may start anywhere
-        /// in a tube; when the player moves it, it goes alone and only into an empty tube, so it sinks to the bottom.
-        /// See <see cref="SetHeavy"/>.
+        /// Cannonball obstacle. It moves alone and only into an empty tube, so it sinks to the bottom.
         /// </summary>
         public bool IsHeavy { get; private set; }
-        public bool IsMoving => _moving;
-        /// <summary>The colour is not shown yet (grey "?" ball); <see cref="Reveal"/> shows it.</summary>
+        /// <summary>Shown as a grey "?" until Reveal.</summary>
         public bool IsHidden { get; private set; }
 
         static readonly Color HiddenTint = new Color(0.42f, 0.42f, 0.50f, 1f);
 
         SpriteRenderer _sr;
         Coroutine _move;
-        bool _moving;
         Sprite _realSprite;
         Color _realColor = Color.white;
         GameObject _mark;
@@ -53,10 +48,7 @@ namespace BallSortGame.Gameplay
             name = $"Ball_{colorIndex}";
         }
 
-        /// <summary>
-        /// Makes the ball heavy (or normal again): the cannonball <paramref name="weight"/> sprite is drawn over the
-        /// colour, which stays what it is for every rule but the move rule.
-        /// </summary>
+        /// <summary>Draws the weight over the colour. The colour still counts for every rule but the move rule.</summary>
         public void SetHeavy(bool heavy, Sprite weight)
         {
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
@@ -79,10 +71,7 @@ namespace BallSortGame.Gameplay
             name = $"Ball_{ColorIndex}_heavy";
         }
 
-        /// <summary>
-        /// Hides the colour: the ball shows <paramref name="placeholder"/> (or its own sprite) tinted grey with a "?"
-        /// on it. The colour index stays, so the rules still know it; the player does not until <see cref="Reveal"/>.
-        /// </summary>
+        /// <summary>Shows a grey "?" ball. The colour index stays, so the rules still know it.</summary>
         public void Hide(Sprite placeholder)
         {
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
@@ -97,10 +86,7 @@ namespace BallSortGame.Gameplay
             EnsureMark();
         }
 
-        /// <summary>
-        /// Editor preview of a hidden coloured ball: the colour stays visible and a "?" is drawn on it, so the designer
-        /// sees both what the ball is and that the game will hide it. The ball does not count as hidden.
-        /// </summary>
+        /// <summary>Level editor preview: keeps the colour but draws the "?". The ball does not count as hidden.</summary>
         public void ShowHiddenMark()
         {
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
@@ -128,7 +114,6 @@ namespace BallSortGame.Gameplay
             }
         }
 
-        /// <summary>Shows the real colour (no-op for a visible ball).</summary>
         public void Reveal()
         {
             if (!IsHidden) return;
@@ -138,7 +123,7 @@ namespace BallSortGame.Gameplay
             if (_mark != null) { Destroy(_mark); _mark = null; }
         }
 
-        /// <summary>Quick ease-out rise to the stand-by position above the tube (select).</summary>
+        /// <summary>Quick rise above the tube when selected.</summary>
         public void RiseTo(Vector3 worldPos, float duration)
         {
             Stop();
@@ -147,7 +132,6 @@ namespace BallSortGame.Gameplay
 
         IEnumerator RiseRoutine(Vector3 to, float duration)
         {
-            _moving = true;
             Vector3 from = transform.position;
             float t = 0f;
             while (t < duration)
@@ -159,13 +143,11 @@ namespace BallSortGame.Gameplay
                 yield return null;
             }
             transform.position = to;
-            _moving = false;
             _move = null;
         }
 
         /// <summary>
-        /// Full move: rise out of the source tube to liftFrom (skipped when already there), arc across to liftTo,
-        /// drop into the slot, then a little bounce. Speed is in world units per second.
+        /// Rise to liftFrom, arc across to liftTo, drop into the slot, then a little bounce. Speed is world units per second.
         /// </summary>
         public void FlyTo(Vector3 liftFrom, Vector3 liftTo, Vector3 slot, float speed, float delay, float arcHeadroom, Action onDone)
         {
@@ -175,7 +157,6 @@ namespace BallSortGame.Gameplay
 
         IEnumerator FlyRoutine(Vector3 liftFrom, Vector3 liftTo, Vector3 slot, float speed, float delay, float arcHeadroom, Action onDone)
         {
-            _moving = true;
             if (delay > 0f) yield return new WaitForSeconds(delay);
 
             // 1) rise out of the source tube (ease out)
@@ -201,11 +182,11 @@ namespace BallSortGame.Gameplay
             {
                 if (arcHeadroom >= MinEllipseHeadroom)
                 {
-                    // half ellipse over the chord liftFrom -> liftTo: horizontal semi-axis = across/2, vertical = height
+                    // half ellipse over the chord liftFrom -> liftTo
                     float height = Mathf.Min(arcHeadroom, EllipseHeightBase + across * EllipseHeightPerUnit);
                     Vector3 mid = (liftFrom + liftTo) * 0.5f;
                     Vector3 half = (liftTo - liftFrom) * 0.5f;
-                    // arc length of the half ellipse (Ramanujan) sets the duration at the given speed
+                    // Ramanujan's arc length, so the duration matches the speed
                     float a = across * 0.5f, bAxis = height;
                     float h = ((a - bAxis) * (a - bAxis)) / ((a + bAxis) * (a + bAxis));
                     float perimeter = Mathf.PI * (a + bAxis) * (1f + 3f * h / (10f + Mathf.Sqrt(4f - 3f * h)));
@@ -215,9 +196,8 @@ namespace BallSortGame.Gameplay
                     {
                         t += Time.deltaTime;
                         float k = Mathf.Clamp01(t / dur);
-                        k = k * k * (3f - 2f * k); // smoothstep on the angle: gentle leave and arrive
-                        float theta = Mathf.PI * (1f - k);            // pi at start, 0 at the end
-                        // theta = pi -> liftFrom (cos = -1), theta = 0 -> liftTo (cos = +1)
+                        k = k * k * (3f - 2f * k); // smoothstep: gentle leave and arrive
+                        float theta = Mathf.PI * (1f - k);            // pi at liftFrom, 0 at liftTo
                         transform.position = mid + half * Mathf.Cos(theta) + Vector3.up * (height * Mathf.Sin(theta));
                         yield return null;
                     }
@@ -274,7 +254,6 @@ namespace BallSortGame.Gameplay
                 transform.position = slot;
             }
 
-            _moving = false;
             _move = null;
             onDone?.Invoke();
         }
@@ -288,7 +267,6 @@ namespace BallSortGame.Gameplay
         void Stop()
         {
             if (_move != null) { StopCoroutine(_move); _move = null; }
-            _moving = false;
         }
     }
 }

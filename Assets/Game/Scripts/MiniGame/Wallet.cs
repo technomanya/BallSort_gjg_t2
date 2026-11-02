@@ -3,24 +3,16 @@ using UnityEngine;
 
 namespace BallSortGame.MiniGame
 {
-    /// <summary>
-    /// Player coin balance, kept in PlayerPrefs. Coins come from filled tubes (banked when the level is won, see LevelCoinsView) and Jump Path prizes and are spent on jumps.
-    /// </summary>
+    /// <summary>The player's coins, saved in PlayerPrefs.</summary>
     public static class Wallet
     {
         const string Key = "ballsort.coins";
+        const int StartingCoins = 30;   // what a new player starts with
 
         /// <summary>Raised with the new balance after every change.</summary>
         public static event Action<int> Changed;
 
-        public static int Coins => PlayerPrefs.GetInt(Key, 0);
-
-        /// <summary>Gives a first-time player <paramref name="startingCoins"/>; does nothing once a balance exists.</summary>
-        public static void Init(int startingCoins)
-        {
-            if (PlayerPrefs.HasKey(Key)) return;
-            Set(Mathf.Max(0, startingCoins));
-        }
+        public static int Coins => PlayerPrefs.GetInt(Key, StartingCoins);
 
         public static void Add(int amount)
         {

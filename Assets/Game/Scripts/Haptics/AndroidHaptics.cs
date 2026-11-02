@@ -3,9 +3,8 @@ using UnityEngine;
 namespace BallSortGame.Haptics
 {
     /// <summary>
-    /// Android bridge: View.performHapticFeedback on the Unity player's focused view, like Magic Sort's
-    /// com.grandgames.watersort.AndroidVibration (including its CONFIRM fallback for old API levels), done through
-    /// AndroidJavaObject so no Java plugin is needed. Supported on API 26+ with a vibrator, as the reference requires.
+    /// Calls View.performHapticFeedback on the Unity player's view through AndroidJavaObject, so no Java plugin is
+    /// needed. Needs API 26+ and a vibrator.
     /// </summary>
     public sealed class AndroidHaptics
     {
@@ -45,6 +44,7 @@ namespace BallSortGame.Haptics
         {
             if (!_supported) return;
             int type = (int)feedback;
+            // CONFIRM only exists from API 30, so fall back on older devices.
             if (type == (int)AndroidHapticFeedback.CONFIRM)
                 type = _sdk >= 30 ? (int)AndroidHapticFeedback.CONFIRM
                      : _sdk >= 27 ? (int)AndroidHapticFeedback.KEYBOARD_PRESS

@@ -8,9 +8,7 @@ using UnityEngine;
 namespace BallSortGame.EditorTools
 {
     /// <summary>
-    /// Adds <see cref="RisingStars"/> to the open scene: one set behind the board (world sprites over the camera
-    /// view) and one over the main menu backdrop (UI images, just above its "bg"). Skips any that already exist.
-    /// Menu: BallSort > Add Background Stars.
+    /// Adds rising stars behind the board and over the main menu backdrop. Skips any that already exist.
     /// </summary>
     public static class BackgroundStarsBuilder
     {

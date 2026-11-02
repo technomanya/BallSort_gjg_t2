@@ -4,11 +4,8 @@ using UnityEngine;
 namespace BallSortGame.Haptics
 {
     /// <summary>
-    /// One pattern per <see cref="HapticType"/>: haptic steps, each played <c>delays[i]</c> ms after the previous one
-    /// (the first delay counts from the start), and a priority that orders patterns started in the same frame.
-    /// Same shape as Magic Sort's Vibration / AndroidFeedbackConfig assets (Delays, Feedbacks, Priority).
-    /// Loaded from Resources/Haptics when that asset exists, otherwise <see cref="CreateDefault"/> supplies the
-    /// values Magic Sort 0.0.3420 ships.
+    /// One vibration pattern per HapticType. Loaded from Resources/Haptics when that asset exists, otherwise
+    /// CreateDefault supplies the values.
     /// </summary>
     [CreateAssetMenu(fileName = "Haptics", menuName = "BallSort/Haptics Config")]
     public class HapticsConfig : ScriptableObject
@@ -17,11 +14,11 @@ namespace BallSortGame.Haptics
         public class Pattern
         {
             public HapticType type;
-            [Tooltip("Milliseconds between steps; delays[0] counts from the start. Empty = no vibration for this event.")]
+            [Tooltip("Ms between steps. Empty = no vibration.")]
             public int[] delays = new int[0];
-            [Tooltip("Android HapticFeedbackConstants per step, one per delay.")]
+            [Tooltip("Android haptic constant per step, one per delay.")]
             public AndroidHapticFeedback[] feedbacks = new AndroidHapticFeedback[0];
-            [Tooltip("Patterns started in the same frame play in descending priority.")]
+            [Tooltip("Higher plays first when started in the same frame.")]
             public int priority;
         }
 
@@ -51,7 +48,6 @@ namespace BallSortGame.Haptics
             return a;
         }
 
-        /// <summary>Magic Sort's shipped VibrationConfigs (buttonclick, bottleselect, bottlefillstart, ... assets).</summary>
         public static HapticsConfig CreateDefault()
         {
             var c = CreateInstance<HapticsConfig>();

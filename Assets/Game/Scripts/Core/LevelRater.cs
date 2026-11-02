@@ -8,25 +8,24 @@ namespace BallSortGame.Core
     public sealed class LevelRating
     {
         public SolveVerdict Verdict;
-        /// <summary>Shortest solution found by A* (optimal when <see cref="AStarOptimal"/> is true).</summary>
+        /// <summary>Shortest solution found. Optimal only when <see cref="AStarOptimal"/>.</summary>
         public int OptimalMoves;
         public bool AStarOptimal;
         public int AStarExpanded;
-        /// <summary>Solution length and search effort of the greedy depth-first solver (the "bot" proxy).</summary>
+        /// <summary>Solution length and search effort of the greedy solver.</summary>
         public int GreedyMoves;
         public int GreedyStates;
-        /// <summary>Lower bound on the move count (colour segments minus colours).</summary>
         public int LowerBound;
-        /// <summary>Random-playout bot: share of playouts that solved the level, and their mean move count.</summary>
+        /// <summary>Share of random playouts that solved the level, and their mean length.</summary>
         public double PlayoutWinRate;
         public double PlayoutMeanMoves;
         public int Playouts;
         public int Colors;
         public int Tubes;
         public int Empties;
-        /// <summary>Continuous difficulty score (see <see cref="LevelRater.Score"/>).</summary>
+        /// <summary>Playout loss rate, 0..1.</summary>
         public double Score;
-        /// <summary>Difficulty bucket 1..7 in the Magic Sort scale.</summary>
+        /// <summary>Difficulty bucket 1..7.</summary>
         public int Bucket;
         public List<SolverMove> Solution;
         public long Milliseconds;
@@ -41,20 +40,18 @@ namespace BallSortGame.Core
         public int AStarMaxMilliseconds;
         public int GreedyMaxStates;
         public int GreedyMaxMilliseconds;
-        /// <summary>Random playouts of the bot (0 = skip).</summary>
+        /// <summary>Random playouts (0 = skip).</summary>
         public int Playouts;
-        /// <summary>Exact buckets 6/7 need at least ~200 playouts (thresholds 0.975 / 0.995).</summary>
+        /// <summary>Buckets 6 and 7 need ~200+ playouts to tell 0.975 from 0.995.</summary>
         public static RaterBudget Default => new RaterBudget { AStarMaxNodes = 300_000, AStarMaxMilliseconds = 1200, GreedyMaxStates = 200_000, GreedyMaxMilliseconds = 600, Playouts = 400 };
-        /// <summary>No A* (greedy solution + playouts only): the bucket does not depend on A*, so this is ~10x faster on big boards.</summary>
+        /// <summary>No A*: the bucket does not depend on it, and this is ~10x faster on big boards.</summary>
         public static RaterBudget Fast => new RaterBudget { AStarMaxNodes = 0, AStarMaxMilliseconds = 0, GreedyMaxStates = 100_000, GreedyMaxMilliseconds = 250, Playouts = 200 };
     }
 
     /// <summary>
-    /// Solver-based difficulty rater. Runs the greedy solver and an A* search (admissible heuristic) to prove the
-    /// level solvable and get a short solution for the "steps" field, then plays it with a random-playout bot
-    /// (<see cref="PlayoutBot"/>) and maps the bot's loss rate onto the 1..7 bucket scale of the Magic Sort bot.
-    /// Calibration: constants in <see cref="Score"/> and <see cref="BucketUpperBounds"/>, fitted on the bot-rated
-    /// Magic Sort seeds (D:\Tools\decon\work\MagicSort_0.0.3420\LEVEL_SYSTEM_REPORT.md).
+    /// Difficulty rater. The greedy and A* solvers prove the level solvable and find a short solution for "steps",
+    /// then a random-playout bot plays it and its loss rate maps to buckets 1..7. Calibration lives in
+    /// <see cref="Score"/> and <see cref="BucketUpperBounds"/>.
     /// </summary>
     public sealed class LevelRater
     {
@@ -77,13 +74,13 @@ namespace BallSortGame.Core
             r.GreedyMoves = gv == SolveVerdict.Solvable ? _greedy.Solution.Count : -1;
             var greedySolution = gv == SolveVerdict.Solvable ? _greedy.Solution : null;
 
-            // strict A* first (optimal), then weighted A* (solution <= 2x optimal) when the board is too big.
-            // Skipped when the budget has no A* nodes and the greedy solver already found a solution: the bucket
-            // only depends on the playouts, and the greedy path is good enough for the "steps" hint.
+            // optimal A* first, then weighted A* (at most 2x optimal) if that runs out of budget.
+            // Skipped when the budget has no A* and greedy found a path: the bucket only needs the playouts.
             var av = SolveVerdict.Unknown;
             bool optimal = false;
             if (budget.AStarMaxNodes > 0 || greedySolution == null)
             {
+                // floor, so a failed greedy run still gets a real A* try
                 int nodes = Math.Max(budget.AStarMaxNodes, 20_000);
                 int ms = Math.Max(budget.AStarMaxMilliseconds, 200);
                 av = _astar.Solve(board, nodes, ms, 1.0);
@@ -135,16 +132,16 @@ namespace BallSortGame.Core
         }
 
         /// <summary>
-        /// Difficulty score = share of random-playout games that end stuck (0..1).
-        /// Calibration on 595 blocker-free Magic Sort seeds with known bot buckets: this loss rate correlates
-        /// +0.87 with the bucket (+0.48 within one design), while solution length, search effort and board size
-        /// do not separate buckets of the same design at all. Bucket means of the loss rate were
-        /// 0.22 / 0.54 / 0.67 / 0.76 / 0.93 / 0.98 / 1.00 for buckets 1..7; the thresholds below reproduce the
-        /// bot bucket exactly for 76 % of the seeds and within one bucket for 92 %.
+        /// Share of random playouts that end stuck (0..1). On 595 seeds with known bot buckets it correlates +0.87
+        /// with the bucket, while solution length, search effort and board size do not separate buckets.
+        /// Mean loss rate per bucket 1..7 was 0.22 / 0.54 / 0.67 / 0.76 / 0.93 / 0.98 / 1.00.
         /// </summary>
         public static double Score(LevelRating r) => r.Playouts > 0 ? 1.0 - r.PlayoutWinRate : 0.0;
 
-        /// <summary>Upper loss-rate bound of buckets 1..6 (bucket 7 is everything above).</summary>
+        /// <summary>
+        /// Upper loss-rate bound of buckets 1..6, bucket 7 is above. Fitted to match the bot bucket exactly for
+        /// 76 % of the calibration seeds and within one for 92 %.
+        /// </summary>
         public static readonly double[] BucketUpperBounds = { 0.50, 0.60, 0.70, 0.87, 0.975, 0.995 };
 
         public static int BucketFor(double score)
@@ -170,11 +167,7 @@ namespace BallSortGame.Core
         }
     }
 
-    /// <summary>
-    /// A* over canonical board states. Moves transfer the whole top run (as many balls as fit), like the game.
-    /// Heuristic: total number of colour segments minus the number of colours (admissible: a move removes at most
-    /// one segment and the goal has one segment per colour).
-    /// </summary>
+    /// <summary>A* over canonical board states. A move transfers the whole top run (as many balls as fit), like the game.</summary>
     public sealed class AStarSolver
     {
         sealed class Node
@@ -190,8 +183,8 @@ namespace BallSortGame.Core
         public List<SolverMove> Solution { get; private set; }
 
         /// <summary>
-        /// Admissible lower bound: max of (colour segments - colours) and sum over colours of (tubes holding the colour - 1).
-        /// A move removes at most one segment and takes one colour out of at most one tube.
+        /// Admissible lower bound: the larger of (colour segments - colours) and the sum over colours of
+        /// (tubes holding it - 1). A move removes at most one segment and clears a colour from at most one tube.
         /// </summary>
         public static int Heuristic(BoardState b)
         {
@@ -220,7 +213,7 @@ namespace BallSortGame.Core
             return Math.Max(Math.Max(0, segments - colors), spread);
         }
 
-        /// <summary><paramref name="weight"/> 1 = optimal A*; above 1 = weighted A* (faster, solution at most weight x optimal).</summary>
+        /// <summary><paramref name="weight"/> 1 = optimal A*, above 1 = weighted A* (faster, at most weight x optimal).</summary>
         public SolveVerdict Solve(BoardState start, int maxNodes, int maxMilliseconds, double weight = 1.0)
         {
             Expanded = 0;
@@ -288,9 +281,8 @@ namespace BallSortGame.Core
     }
 
     /// <summary>
-    /// A simple player model: plays random legal moves with a mild preference for moves that stack a colour on
-    /// itself, never undoes the previous move, and gives up when stuck or after a move cap. The share of playouts
-    /// that reach the win and their length are the "how easily does a casual player get stuck" signal.
+    /// Casual player model: random legal moves, preferring moves that stack a colour on itself, never undoing the
+    /// last move. Gives up when stuck or at a move cap. Its win share says how easily a player gets stuck.
     /// </summary>
     public static class PlayoutBot
     {
@@ -299,7 +291,7 @@ namespace BallSortGame.Core
             var rng = new Random(rngSeed);
             int wins = 0; long winMoves = 0;
             int lb = AStarSolver.Heuristic(start);
-            int cap = lb * 4 + 40;
+            int cap = lb * 4 + 40;   // move cap, part of the calibration
             var moves = new List<(int from, int to, int count, bool good)>(64);
             for (int p = 0; p < playouts; p++)
             {
@@ -337,7 +329,7 @@ namespace BallSortGame.Core
                     }
                     if (moves.Count == 0) break;
                     int pick;
-                    if (goodCount > 0 && rng.NextDouble() < 0.7)
+                    if (goodCount > 0 && rng.NextDouble() < 0.7)   // stacking bias, part of the calibration
                     {
                         int k = rng.Next(goodCount);
                         pick = 0;
@@ -354,7 +346,7 @@ namespace BallSortGame.Core
         }
     }
 
-    /// <summary>Binary min-heap keyed by a long priority (Unity's .NET profile has no PriorityQueue).</summary>
+    /// <summary>Binary min-heap keyed by a long. Unity's .NET profile has no PriorityQueue.</summary>
     sealed class MinHeap<T>
     {
         T[] _items = new T[256];
